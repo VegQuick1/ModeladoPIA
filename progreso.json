@@ -1,0 +1,16 @@
+{
+  "version": 3,
+  "modo_ejecucion": "OFICIAL_PDF",
+  "modos": {
+    "DINAMICO": {
+      "capitulo": 1,
+      "completados": [],
+      "semilla": 604372777
+    },
+    "OFICIAL_PDF": {
+      "capitulo": 1,
+      "completados": [],
+      "semilla": 2066230022
+    }
+  }
+}
