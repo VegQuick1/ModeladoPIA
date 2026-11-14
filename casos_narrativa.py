@@ -131,7 +131,8 @@ def crear_caso(
     datos_oficiales = CASOS_OFICIALES_PDF.get(numero) if modo_ejecucion == "OFICIAL_PDF" else None
     caso = {
         "numero": numero, "titulo": TITULOS[numero - 1], "semilla": semilla,
-        "duracion": DURACION_CAPITULO, "narrativa": "", "tabla": [],
+        "duracion": 720 if numero == 12 else DURACION_CAPITULO,
+        "narrativa": "", "tabla": [], "formula": "",
         "formato": "", "campos": [], "esperado": {}, "auditoria": {},
         "respuestas": [], "modo_ejecucion": modo_ejecucion,
         "origen_problema": (
@@ -265,11 +266,20 @@ def _caso_generador(
             "Xnext": (a * x) % m, "X": (a * x) % m,
             "R": f"{(a * x) % m}/{m}",
         })
+    for fila in filas_calculo:
+        producto = a * fila["Xn"] + c if numero == 1 else a * fila["Xn"]
+        cociente, residuo = divmod(producto, m)
+        fila["operacion"] = (
+            f"{cociente}+{residuo}/{m}" if cociente else f"{residuo}/{m}"
+        )
     caso["auditoria"]["tabla_interactiva"] = filas_calculo
+    caso["auditoria"]["tabla_generada"] = filas_calculo
     caso["esperado"] = {
         f"{nombre}{i}": fila[clave]
         for i, fila in enumerate(filas_calculo, 1)
-        for nombre, clave in (("n", "n"), ("Xn", "Xn"), ("Xnext", "Xnext"), ("R", "R"))
+        for nombre, clave in (
+            ("n", "n"), ("Xn", "Xn"), ("Xnext", "Xnext"), ("R", "R"),
+        )
     }
     caso["esperado"]["periodo"] = "Aceptados" if ciclo_completo else "Rechazados"
     caso["auditoria"]["periodo_veredicto"] = caso["esperado"]["periodo"]
@@ -278,12 +288,16 @@ def _caso_generador(
         "Xn+1 == X0 o Xn+1 == Xn" if numero == 1 else "Xn+1 == X0"
     )
     caso["tabla"] = [
-        ["n", "Xₙ", "Xₙ₊₁", "# Rect (fracción con /)"],
+        ["n", "Xn", "Xn+1", "# Rectangular"],
         *[
             [fila["n"], fila["Xn"], fila["Xnext"], fila["R"]]
             for fila in filas_calculo
         ],
     ]
+    caso["formula"] = (
+        f"Xₙ₊₁ = ({a}Xₙ + {c}) mod {m}"
+        if numero == 1 else f"Xₙ₊₁ = {a}Xₙ mod {m}\nPE = m / 4 = {periodo_esperado}"
+    )
     caso["formato"] = "Completa las filas hasta que se cumpla la condición de paro."
 
 
@@ -302,10 +316,12 @@ def _caso_promedios(caso: dict, rng: random.Random, oficial: dict | None = None)
     caso["campos"] = [
         _campo("media", "Media", "decimal"),
         _campo("z0", "Z₀", "decimal"),
+        _campo("zcrit", "Z de tabla", "decimal"),
         _campo("veredicto", "Decisión H₀", "selector", ["Acepta H₀", "Rechaza H₀"]),
     ]
     caso["esperado"] = {
         "media": resultado["media"], "z0": resultado["z0"],
+        "zcrit": 1.96,
         "veredicto": "Acepta H₀" if resultado["acepta"] else "Rechaza H₀",
     }
     caso["auditoria"] = {
@@ -334,10 +350,12 @@ def _caso_ks(caso: dict, rng: random.Random, oficial: dict | None = None) -> Non
     caso["formato"] = "Ingresa Dₙ y el veredicto de H₀ (Dₙ ≤ D crítico)."
     caso["campos"] = [
         _campo("dn", "Dₙ", "decimal"),
+        _campo("critico_tabla", "d₀.₀₅,N de tabla", "decimal"),
         _campo("veredicto", "Decisión H₀", "selector", ["Acepta H₀", "Rechaza H₀"]),
     ]
     caso["esperado"] = {
         "dn": resultado["dn"],
+        "critico_tabla": resultado["critico"],
         "veredicto": "Acepta H₀" if resultado["acepta"] else "Rechaza H₀",
     }
     caso["auditoria"] = {
@@ -370,10 +388,12 @@ def _caso_frecuencias(caso: dict, rng: random.Random, oficial: dict | None = Non
     caso["formato"] = "Ingresa χ₀² y el veredicto de H₀."
     caso["campos"] = [
         _campo("chi0", "χ₀²", "decimal"),
+        _campo("critico_tabla", "χ² crítico de tabla", "decimal"),
         _campo("veredicto", "Decisión H₀", "selector", ["Acepta H₀", "Rechaza H₀"]),
     ]
     caso["esperado"] = {
         "chi0": resultado["chi0"],
+        "critico_tabla": resultado["critico"],
         "veredicto": "Acepta H₀" if resultado["acepta"] else "Rechaza H₀",
     }
     caso["auditoria"] = {
@@ -416,11 +436,29 @@ def _caso_distancias(caso: dict, rng: random.Random, oficial: dict | None = None
     caso["tabla"] = tabla
     caso["formato"] = "Calcula el χ₀² de las categorías agrupadas y decide sobre H₀."
     caso["campos"] = [
+        *[
+            _campo(f"FO{indice}", f"FO{indice}", "entero")
+            for indice in range(4)
+        ],
+        *[
+            _campo(f"FE{indice}", f"FE{indice}", "decimal")
+            for indice in range(4)
+        ],
         _campo("chi0", "χ₀² agrupado", "decimal"),
+        _campo("critico_tabla", "χ² crítico de tabla", "decimal"),
         _campo("veredicto", "Decisión H₀", "selector", ["Acepta H₀", "Rechaza H₀"]),
     ]
     caso["esperado"] = {
+        **{
+            f"FO{indice}": resultado["observadas"][indice]
+            for indice in range(4)
+        },
+        **{
+            f"FE{indice}": resultado["esperadas"][indice]
+            for indice in range(4)
+        },
         "chi0": resultado["chi0"],
+        "critico_tabla": resultado["critico"],
         "veredicto": "Acepta H₀" if resultado["acepta"] else "Rechaza H₀",
     }
     caso["auditoria"] = {
@@ -454,11 +492,15 @@ def _caso_series(caso: dict, rng: random.Random, oficial: dict | None = None) ->
     caso["tabla"] = tabla
     caso["formato"] = "Calcula χ₀² y selecciona el veredicto de independencia H₀."
     caso["campos"] = [
+        _campo("FE_pareja", "Frecuencia esperada por celda", "decimal"),
         _campo("chi0", "χ₀²", "decimal"),
+        _campo("critico_tabla", "χ² crítico de tabla", "decimal"),
         _campo("veredicto", "Decisión H₀", "selector", ["Acepta H₀", "Rechaza H₀"]),
     ]
     caso["esperado"] = {
+        "FE_pareja": resultado["FE_por_celda"],
         "chi0": resultado["chi0"],
+        "critico_tabla": resultado["critico"],
         "veredicto": "Acepta H₀" if resultado["acepta"] else "Rechaza H₀",
     }
     caso["auditoria"] = {
@@ -509,11 +551,29 @@ def _caso_poker(caso: dict, rng: random.Random, oficial: dict | None = None) -> 
     caso["tabla"] = tabla
     caso["formato"] = "Calcula χ₀² agrupado y selecciona si la secuencia pasa Póker."
     caso["campos"] = [
+        *[
+            _campo(f"FO{indice}", f"FO {categoria}", "entero")
+            for indice, categoria in enumerate(resultado["categorias"])
+        ],
+        *[
+            _campo(f"FEp{indice}", f"FE {categoria}", "decimal")
+            for indice, categoria in enumerate(resultado["categorias"])
+        ],
         _campo("chi0", "χ₀² agrupado", "decimal"),
+        _campo("critico_tabla", "χ² crítico de tabla", "decimal"),
         _campo("veredicto", "Prueba de Póker", "selector", ["Acepta H₀", "Rechaza H₀"]),
     ]
     caso["esperado"] = {
+        **{
+            f"FO{indice}": valor
+            for indice, valor in enumerate(resultado["observadas"])
+        },
+        **{
+            f"FEp{indice}": valor
+            for indice, valor in enumerate(resultado["esperadas"])
+        },
         "chi0": resultado["chi0"],
+        "critico_tabla": resultado["critico"],
         "veredicto": "Acepta H₀" if resultado["acepta"] else "Rechaza H₀",
     }
     caso["auditoria"] = {
@@ -795,7 +855,10 @@ def validar_respuesta(
                 formatos_invalidos.append(clave)
                 errores.append(clave)
                 continue
-            esperado_fraccion = Fraction(esperado)
+            try:
+                esperado_fraccion = Fraction(str(esperado))
+            except (ValueError, ZeroDivisionError):
+                raise ValueError(f"Valor esperado inválido para {clave}: {esperado!r}")
             if valor_fraccion == esperado_fraccion:
                 correctos.append(clave)
                 continue
@@ -882,6 +945,11 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
         opciones: list[str] | None = None,
     ) -> dict:
         caso["esperado"][identificador] = valor
+        existente = next(
+            (campo for campo in campos if campo["id"] == identificador), None,
+        )
+        if existente is not None:
+            return existente
         campo = _campo(identificador, etiqueta, tipo, opciones)
         campos.append(campo)
         return campo
@@ -906,16 +974,21 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
         clave: str, titulo: str, columnas: list[str], filas: list[list[dict]],
         dinamica: bool = False, iniciales: int = 3, paro: int | None = None,
         mensaje_faltan: str | None = None,
+        scrollable: bool = True,
+        visual: str | None = None,
+        maximo: int | None = None,
     ) -> None:
         secciones.append({
             "id": clave, "titulo": titulo, "columnas": columnas, "filas": filas,
             "dinamica": dinamica, "filas_iniciales": iniciales,
             "filas_paro": paro if paro is not None else len(filas),
-            "max_filas": len(filas),
+            "max_filas": maximo if maximo is not None else len(filas),
             "mensaje_faltan": mensaje_faltan or (
                 "Aún no se detecta el cierre del ciclo ni se alcanza el criterio "
                 "de paro; agrega más filas"
             ),
+            "scrollable": scrollable,
+            "visual": visual,
         })
 
     if numero in (1, 2):
@@ -924,28 +997,40 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
         filas = []
         for indice, fila in enumerate(datos, 1):
             filas.append([
-                celda_editable(f"n{indice}", "n", fila["n"], "entero"),
-                celda_editable(f"Xn{indice}", "Xₙ", fila["Xn"], "entero"),
-                celda_editable(f"Xnext{indice}", "Xₙ₊₁", fila["Xnext"], "entero"),
-                celda_editable(f"R{indice}", f"R{indice} (ej. 27/64)", fila["R"],
-                               "fracción (ej. 27/64)"),
+                celda_editable(f"n{indice}", f"n fila {indice}", fila["n"], "entero"),
+                celda_editable(f"Xn{indice}", f"Xn fila {indice}", fila["Xn"], "entero"),
+                celda_editable(f"Xnext{indice}", f"Xn+1 fila {indice}", fila["Xnext"], "entero"),
+                celda_editable(
+                    f"R{indice}", f"R{indice} (ej. 27/64)", fila["R"],
+                    "fracción (ej. 27/64)",
+                ),
             ])
         agregar_seccion(
             "iteraciones", "Iteraciones del generador",
-            ["n", "Xₙ", "Xₙ₊₁", "# Rect (fracción con /)"],
+            ["n", "Xn", "Xn+1", "# Rectangular"],
             filas, dinamica=True, iniciales=min(3, parar_en), paro=parar_en,
+            maximo=(
+                len(filas) if caso["modo_ejecucion"] == "OFICIAL_PDF"
+                else min(len(filas), 16)
+            ),
         )
         crear_campo(
-            "periodo", "Veredicto del período", "selector",
+            "periodo", "Los números rectangulares son:", "selector",
             esperado_original["periodo"], ["Aceptados", "Rechazados"],
         )
         pie.append("periodo")
     elif numero == 3:
         valores = caso["auditoria"]["valores_R"]
-        filas = [[celda_dada(indice), celda_dada(f"{valor:.5f}")]
-                 for indice, valor in enumerate(valores, 1)]
-        agregar_seccion("muestra", "Muestra de números rectangulares", ["i", "Rᵢ"], filas)
-        for clave in ("media", "z0", "veredicto"):
+        filas = []
+        for inicio in range(0, len(valores), 5):
+            filas.append([
+                celda_dada(f"{valor:.5f}") for valor in valores[inicio:inicio + 5]
+            ])
+        agregar_seccion(
+            "muestra", "Muestra de números rectangulares",
+            ["R₁", "R₂", "R₃", "R₄", "R₅"], filas, scrollable=False,
+        )
+        for clave in ("media", "z0", "zcrit", "veredicto"):
             agregar_pie(clave)
     elif numero == 4:
         filas = []
@@ -959,19 +1044,20 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
                 celda_editable(clave, f"D{indice}", registro["diferencia"]),
             ])
         agregar_seccion("ks", "Prueba Kolmogorov-Smirnov",
-                        ["i", "Xᵢ ordenado", "F(xᵢ)=i/N", "Dᵢ"], filas)
-        for clave in ("dn", "veredicto"):
+                        ["i", "Xi ordenado", "F(xi)=i/N", "Dn"], filas,
+                        scrollable=False)
+        for clave in ("dn", "critico_tabla", "veredicto"):
             agregar_pie(clave)
     elif numero == 5:
         valores = caso["auditoria"]["valores_R"]
         categorias = len(caso["auditoria"]["observadas"])
         filas = []
         for indice in range(categorias):
-            inferior = indice / categorias
-            superior = (indice + 1) / categorias
+            inferior = f"{indice}/{categorias}"
+            superior = f"{indice + 1}/{categorias}"
             cierre = "]" if indice == categorias - 1 else ")"
             filas.append([
-                celda_dada(f"[{inferior:.2f}, {superior:.2f}{cierre}"),
+                celda_dada(f"[{inferior}, {superior}{cierre}"),
                 celda_dada(caso["auditoria"]["esperadas"][indice]),
                 celda_editable(
                     f"FO{indice}", f"FO{indice}",
@@ -980,7 +1066,7 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
             ])
         agregar_seccion("frecuencias", "Frecuencias por intervalo",
                         ["Intervalo", "FEᵢ", "FOᵢ"], filas)
-        for clave in ("chi0", "veredicto"):
+        for clave in ("chi0", "critico_tabla", "veredicto"):
             agregar_pie(clave)
     elif numero == 6:
         resultado = caso["auditoria"]
@@ -992,18 +1078,36 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
                     f"FO{indice}", f"FO{indice}",
                     resultado["observadas"][indice], "entero",
                 ),
-                celda_dada(f'{resultado["esperadas"][indice]:.2f}'),
-                celda_dada("Grupo 0–2" if indice < 3 else "Grupo ≥3"),
-            ])
-        for grupo in resultado["grupos"]:
-            filas.append([
-                celda_dada(f'Grupo {grupo["categoria"]}'),
-                celda_dada(grupo["FO"]), celda_dada(f'{grupo["FE"]:.3f}'),
-                celda_dada("Agrupación χ²"),
+                celda_editable(
+                    f"FE{indice}", f"FE{indice}",
+                    resultado["esperadas"][indice],
+                ),
             ])
         agregar_seccion("distancias", "Distancias entre dígitos repetidos",
-                        ["i", "FOᵢ", "FEᵢ", "Agrupación"], filas)
-        for clave in ("chi0", "veredicto"):
+                        ["i", "FOi", "FEi"], filas)
+        if "valores_R" in caso["auditoria"]:
+            grupos_valores = {
+                hueco: [f"{valor:.5f}" for valor, distancia in zip(
+                    caso["auditoria"]["valores_R"], resultado["huecos"]
+                ) if distancia == hueco]
+                for hueco in range(4)
+            }
+            valores_filas = [
+                [celda_dada(f"Distancia {hueco}"), celda_dada(", ".join(valores))]
+                for hueco, valores in grupos_valores.items()
+            ]
+            titulo_muestra = "Números agrupados por primera repetición"
+            encabezados_muestra = ["Distancia", "Números"]
+        else:
+            valores_filas = [[
+                celda_dada(", ".join(map(str, caso["auditoria"]["digitos"]))),
+            ]]
+            titulo_muestra = "Secuencia de dígitos"
+            encabezados_muestra = ["Dígitos"]
+        agregar_seccion(
+            "muestra_distancias", titulo_muestra, encabezados_muestra, valores_filas,
+        )
+        for clave in ("chi0", "critico_tabla", "veredicto"):
             agregar_pie(clave)
     elif numero == 7:
         matriz = caso["auditoria"]["observadas_matriz"]
@@ -1019,35 +1123,39 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
                 celda_dada(caso["auditoria"]["FE_por_celda"]),
             ])
         agregar_seccion("series", "Conteos de parejas por cuadrante",
-                        ["Cuadrante", "FO", "FE"], filas)
-        for clave in ("chi0", "veredicto"):
+                        ["Cuadrante", "FO", "FE"], filas, visual="cuadrantes")
+        for clave in ("FE_pareja", "chi0", "critico_tabla", "veredicto"):
             agregar_pie(clave)
     elif numero == 8:
         auditoria = caso["auditoria"]
         filas = []
         for indice, categoria in enumerate(auditoria["categorias"]):
             filas.append([
-                celda_dada(categoria),
+                celda_dada({
+                    "Todos distintos": "TD", "Un par": "1P", "Dos pares": "2P",
+                    "Tercia": "T", "Full": "F", "Póker": "P", "Quintilla": "Q",
+                }.get(categoria, categoria)),
                 celda_editable(
                     f"FO{indice}", f"FO {categoria}", auditoria["observadas"][indice],
                     "entero",
                 ),
-                celda_dada(f'{auditoria["esperadas"][indice]:.3f}'),
-                celda_dada(
-                    "Omitir FE<5 sin observaciones"
-                    if categoria in auditoria["categorias_omitidas"] else
-                    "Agrupar resto" if categoria != "Un par" else "Grupo Un par"
+                celda_editable(
+                    f"FEp{indice}", f"FE {categoria}",
+                    auditoria["esperadas"][indice],
                 ),
             ])
-        for grupo in auditoria["grupos"]:
-            filas.append([
-                celda_dada(f'Grupo {grupo["categoria"]}'),
-                celda_dada(grupo["FO"]), celda_dada(f'{grupo["FE"]:.3f}'),
-                celda_dada("FE agrupada"),
-            ])
         agregar_seccion("poker", "Clasificación de manos de Póker",
-                        ["Mano", "FO", "FE", "Agrupación"], filas)
-        for clave in ("chi0", "veredicto"):
+                        ["Mano", "FO", "FE"], filas)
+        agregar_seccion(
+            "poker_agrupacion", "Agrupación para χ² (gl = 1)",
+            ["Grupo", "FO", "FE"],
+            [
+                [celda_dada(grupo["categoria"]), celda_dada(grupo["FO"]),
+                 celda_dada(f'{grupo["FE"]:.4f}')]
+                for grupo in auditoria["grupos"]
+            ],
+        )
+        for clave in ("chi0", "critico_tabla", "veredicto"):
             agregar_pie(clave)
     elif numero in (9, 10, 11):
         valores = caso["auditoria"]["valores_R"]
@@ -1080,12 +1188,13 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
     elif numero == 12:
         auditoria = caso["auditoria"]
         poisson = list(auditoria["tabla_completa"])
-        if poisson[-1]["x"] == 15:
-            fila = poisson[-1]
-            f_siguiente = fila["f"] * auditoria["lambda"] / 16
-            poisson.append({
-                "x": 16, "f": f_siguiente, "F": fila["F"] + f_siguiente,
-            })
+        fila_final = poisson[-1]
+        x_siguiente = fila_final["x"] + 1
+        f_siguiente = fila_final["f"] * auditoria["lambda"] / x_siguiente
+        poisson.append({
+            "x": x_siguiente, "f": f_siguiente,
+            "F": fila_final["F"] + f_siguiente,
+        })
         filas_poisson = []
         for indice, fila in enumerate(poisson):
             filas_poisson.append([
@@ -1099,6 +1208,10 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
             dinamica=True, iniciales=3, paro=len(auditoria["tabla_completa"]),
             mensaje_faltan=(
                 "La tabla de Poisson aún no alcanza F(x)≥0.9999; agrega más filas"
+            ),
+            maximo=(
+                len(filas_poisson) if caso["modo_ejecucion"] == "OFICIAL_PDF"
+                else min(len(filas_poisson), 16)
             ),
         )
         valores = auditoria["valores_R"]

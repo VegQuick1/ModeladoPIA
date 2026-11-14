@@ -11,19 +11,21 @@ python main.py
 ```
 
 La aplicación presenta un prólogo antes de iniciar el reloj. Cada capítulo
-dispone de 600 segundos y cada error descuenta 25 segundos. El reloj está verde
-por encima de 180 s, amarillo entre 61 y 180 s, y rojo parpadeante durante los
-últimos 60 s. El progreso se guarda en `progreso.json`, junto a `main.py`.
-El modo demostración habilita la
-auditoría matemática y la navegación libre entre capítulos. Desde la pestaña
-**Auditoría V&V** se exporta la corrida actual a JSON o TXT.
+dispone de 600 segundos, excepto Poisson (capítulo 12), con 720 segundos. Cada
+respuesta incorrecta descuenta 25 segundos; los errores de sintaxis en
+fracciones se explican sin penalización. El reloj está verde por encima de
+180 s, amarillo entre 61 y 180 s, y rojo parpadeante durante los últimos 60 s.
+El progreso se guarda en `savegame.json`; un `progreso.json` anterior se puede
+migrar al iniciar. El modo demostración habilita la auditoría matemática y la
+navegación libre entre capítulos. Desde la pestaña **Auditoría V&V** se exporta
+la corrida actual a JSON o TXT.
 
 El prólogo ofrece dos modos: **Dinámico**, que conserva los problemas
 pseudoaleatorios por semilla, y **Modo: Oficial Libreta / PDF**, con los 14
-ejercicios oficiales en el orden de la libreta. Se pueden alternar durante la
-partida; el capítulo se recarga con 10:00 y cada modo conserva su progreso por
-separado. La auditoría y sus exportaciones incluyen `modo_ejecucion` y
-`origen_problema`.
+ejercicios oficiales en el orden de la libreta. El modo se elige al iniciar una
+partida. La auditoría y sus exportaciones incluyen `modo_ejecucion` y
+`origen_problema`; los capítulos estadísticos también disponen de una vista de
+tablas críticas Z, KS y χ².
 
 Los capítulos se resuelven en tablas interactivas: los datos conocidos son de
 solo lectura y los resultados se escriben directamente en celdas editables.
@@ -36,7 +38,9 @@ de distancias usa repeticiones dentro de los cinco decimales de cada R, y Póker
 clasifica patrones de cinco dígitos. En el ejercicio de volados, la secuencia
 oficial se consume en orden, la apuesta se duplica tras una pérdida y se
 mantiene tras una victoria; la probabilidad se calcula sobre las corridas
-completas y la auditoría identifica las corridas inconclusas.
+completas y la auditoría identifica las corridas inconclusas. Si vence el
+tiempo, el modo dinámico regenera el caso con otra semilla al reintentarlo; el
+modo oficial conserva los datos publicados.
 
 ## Capítulos
 
@@ -65,7 +69,6 @@ completas y la auditoría identifica las corridas inconclusas.
 - `sistemas_aplicados.py`: Martingala y cola de un servidor.
 - `casos_narrativa.py`: generación de expedientes y verificación tolerante.
 
-Las semillas, secuencias y tablas se generan dinámicamente al crear/reintentar
-cada capítulo. Al agotarse el tiempo, el nodo vuelve a generarse con una semilla
-nueva. Ejecuta las pruebas con `python -m pytest -q` o
+Las semillas, secuencias y tablas dinámicas se generan al crear o reintentar
+cada capítulo. Ejecuta las pruebas con `python -m pytest -q` o
 `python -m unittest discover -s tests -v`.

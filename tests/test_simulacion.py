@@ -13,16 +13,24 @@ from main import (
     _analisis_transitorio_estable,
     _extraer_resultados_pruebas,
     construir_documento_auditoria,
+    crear_savegame,
     estado_reloj,
+    estado_nodo,
+    minimo_segundos_humanos,
+    normalizar_savegame,
+    resultado_final,
 )
 
 
 class TemporizadorTests(unittest.TestCase):
-    def test_todos_los_capitulos_tienen_600_segundos(self):
+    def test_duracion_de_capitulos_y_ajustes_de_reloj(self):
         self.assertEqual(casos_narrativa.DURACION_CAPITULO, 600)
         for numero in range(1, 15):
             with self.subTest(capitulo=numero):
-                self.assertEqual(casos_narrativa.crear_caso(numero, numero)["duracion"], 600)
+                duracion = 720 if numero == 12 else 600
+                self.assertEqual(
+                    casos_narrativa.crear_caso(numero, numero)["duracion"], duracion,
+                )
 
     def test_colores_y_penalizacion_en_los_limites(self):
         self.assertEqual(estado_reloj(181), "verde")
@@ -31,6 +39,39 @@ class TemporizadorTests(unittest.TestCase):
         self.assertEqual(estado_reloj(60), "rojo")
         self.assertEqual(estado_reloj(0), "rojo")
         self.assertEqual(PENALIZACION_SEGUNDOS, 25)
+
+    def test_savegame_progreso_y_umbral_antitrampa(self):
+        guardado = crear_savegame("OFICIAL_PDF", "Detective Vance")
+        self.assertEqual(guardado["modo"], "OFICIAL_PDF")
+        self.assertEqual(guardado["alias"], "Detective Vance")
+        self.assertEqual(estado_nodo(1, guardado), "○")
+        self.assertEqual(estado_nodo(2, guardado), "🔒")
+
+        guardado["estrellas"] = [1, 2]
+        guardado["fallidos"] = [3]
+        self.assertEqual(estado_nodo(3, guardado), "⚠")
+        self.assertEqual(estado_nodo(4, guardado), "○")
+        self.assertEqual(resultado_final(guardado), "incompleto")
+        self.assertEqual(
+            resultado_final({**guardado, "estrellas": list(range(1, 15))}),
+            "bueno",
+        )
+
+        normalizado = normalizar_savegame({
+            "modo": "modo-desconocido", "alias": "  Forense  ",
+            "capitulo": 99, "estrellas": [1, 99, "2", True],
+            "fallidos": [2, 2, 0],
+        })
+        self.assertEqual(normalizado["modo"], "DINAMICO")
+        self.assertEqual(normalizado["alias"], "Forense")
+        self.assertEqual(normalizado["capitulo"], 14)
+        self.assertEqual(normalizado["estrellas"], [1])
+        self.assertEqual(normalizado["fallidos"], [2])
+
+        caso_pequeno = casos_narrativa.crear_caso(3, 10)
+        caso_grande = casos_narrativa.crear_caso(2, 10, "OFICIAL_PDF")
+        self.assertEqual(minimo_segundos_humanos(caso_pequeno), 15)
+        self.assertEqual(minimo_segundos_humanos(caso_grande), 30)
 
 
 class GeneradoresTests(unittest.TestCase):
@@ -191,7 +232,7 @@ class CasosTests(unittest.TestCase):
                     )
                     self.assertEqual(caso["modo_ejecucion"], modo)
                     self.assertTrue(caso["tabla"])
-                    self.assertEqual(caso["duracion"], 600)
+                    self.assertEqual(caso["duracion"], 720 if numero == 12 else 600)
                     respuestas = {
                         campo["id"]: str(caso["esperado"][campo["id"]])
                         for campo in caso["campos"]
@@ -203,6 +244,8 @@ class CasosTests(unittest.TestCase):
                         if seccion["dinamica"] and numero in (1, 2, 12):
                             self.assertGreaterEqual(seccion["filas_paro"], 4)
                             self.assertLessEqual(seccion["filas_paro"], 16)
+                            if modo == "DINAMICO":
+                                self.assertLessEqual(seccion["max_filas"], 16)
 
     def test_tablas_interactivas_y_condiciones_de_paro(self):
         for numero, filas_paro in ((1, 6), (2, 16)):
@@ -212,12 +255,8 @@ class CasosTests(unittest.TestCase):
             self.assertEqual(seccion["filas_iniciales"], 3)
             self.assertEqual(seccion["filas_paro"], filas_paro)
             self.assertEqual(seccion["max_filas"], filas_paro + 1)
-            self.assertEqual(
-                [len(fila) for fila in seccion["filas"]], [4] * (filas_paro + 1),
-            )
-            self.assertTrue(all(
-                "campo" in celda for fila in seccion["filas"] for celda in fila
-            ))
+            self.assertEqual([len(fila) for fila in seccion["filas"]], [4] * (filas_paro + 1))
+            self.assertTrue(all("campo" in celda for fila in seccion["filas"] for celda in fila))
         cola = casos_narrativa.crear_caso(13, 77, "OFICIAL_PDF")
         filas_cola = cola["tabla_interactiva"]["secciones"][0]["filas"]
         self.assertEqual(sum("campo" in celda for celda in filas_cola[-1]), 4)
@@ -411,7 +450,7 @@ class CasosTests(unittest.TestCase):
         for numero in (1, 2):
             caso = casos_narrativa.crear_caso(numero, semilla=22, modo_ejecucion="OFICIAL_PDF")
             self.assertEqual(caso["tabla"][0], [
-                "n", "Xₙ", "Xₙ₊₁", "# Rect (fracción con /)",
+                "n", "Xn", "Xn+1", "# Rectangular",
             ])
             filas = caso["auditoria"]["tabla_generada"]
             for indice, fila in enumerate(filas, 1):
@@ -423,6 +462,13 @@ class CasosTests(unittest.TestCase):
                     campo["etiqueta"] for campo in caso["campos"]
                     if campo["id"] == f"R{indice}"
                 ))
+            columnas = caso["tabla_interactiva"]["secciones"][0]["columnas"]
+            self.assertEqual(columnas, ["n", "Xn", "Xn+1", "# Rectangular"])
+            ids_fila_1 = {
+                celda.get("campo")
+                for celda in caso["tabla_interactiva"]["secciones"][0]["filas"][0]
+            }
+            self.assertEqual(ids_fila_1, {"n1", "Xn1", "Xnext1", "R1"})
             entrada_correcta = {
                 clave: str(valor) for clave, valor in caso["esperado"].items()
             }
@@ -453,6 +499,31 @@ class CasosTests(unittest.TestCase):
         self.assertFalse(resultado["correcto"])
         self.assertEqual(resultado["formatos_invalidos"], ["R1"])
         self.assertIn("27/64", resultado["diagnostico"])
+
+    def test_tablas_estadisticas_contienen_respuestas_interactivas_y_criticos(self):
+        casos = {
+            numero: casos_narrativa.crear_caso(numero, 77, "OFICIAL_PDF")
+            for numero in range(3, 9)
+        }
+        self.assertIn("zcrit", casos[3]["tabla_interactiva"]["pie"])
+        self.assertTrue(all(
+            campo["campo"].startswith("D")
+            for campo in casos[4]["tabla_interactiva"]["secciones"][0]["filas"][0]
+            if "campo" in campo
+        ))
+        self.assertEqual(
+            [casos[5]["esperado"][f"FO{i}"] for i in range(4)], [4, 4, 2, 0],
+        )
+        self.assertTrue(
+            casos[7]["tabla_interactiva"]["secciones"][0]["visual"] == "cuadrantes",
+        )
+        manos = casos[8]["tabla_interactiva"]["secciones"][0]["filas"]
+        self.assertEqual(len(manos), 7)
+        self.assertEqual(
+            [celda["valor"] for fila in manos for celda in fila[:1]],
+            ["TD", "1P", "2P", "T", "F", "P", "Q"],
+        )
+        self.assertAlmostEqual(casos[8]["esperado"]["chi0"], 0.3528604, places=6)
 
     def test_porcentaje_y_probabilidad_admiten_fracciones_o_porcentajes(self):
         probabilidad = casos_narrativa.crear_caso(14, semilla=314)
