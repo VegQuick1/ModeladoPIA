@@ -93,7 +93,7 @@ class VerificacionEntornoTests(unittest.TestCase):
             Path(modulo_main.__file__).resolve().with_name("savegame.json"),
         )
 
-    def test_preflight_redirige_guardado_a_localappdata_si_no_hay_permiso(self):
+    def test_preflight_redirige_guardado_a_la_ruta_de_usuario_si_no_hay_permiso(self):
         guardado_original = modulo_main.ARCHIVO_SAVEGAME
         with tempfile.TemporaryDirectory() as directorio:
             with (
@@ -104,9 +104,21 @@ class VerificacionEntornoTests(unittest.TestCase):
             ):
                 modulo_main.verificar_entorno_ejecucion()
                 ruta_guardada = modulo_main.ARCHIVO_SAVEGAME
+                if modulo_main.sys.platform == "darwin":
+                    ruta_esperada = (
+                        Path.home()
+                        / "Library"
+                        / "Application Support"
+                        / "ExpedienteMontecarlo"
+                        / "savegame.json"
+                    )
+                else:
+                    ruta_esperada = (
+                        Path(directorio) / "ExpedienteMontecarlo" / "savegame.json"
+                    )
                 self.assertEqual(
                     ruta_guardada,
-                    Path(directorio) / "ExpedienteMontecarlo" / "savegame.json",
+                    ruta_esperada,
                 )
                 self.assertTrue(ruta_guardada.is_file())
 
