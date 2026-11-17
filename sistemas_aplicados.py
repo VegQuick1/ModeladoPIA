@@ -1,4 +1,4 @@
-"""Simulaciones de Martingala y de una cola de un solo canal."""
+"""Simulaciones de Martingala, colas e inventarios."""
 
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ def simular_cola(
 def simular_cola_tiempos(
     tiempos_llegada: list[float], tiempos_servicio: list[float]
 ) -> dict:
-    """Simula la cola con tiempos entre llegadas y servicios ya especificados."""
+    """Calcula la cola a partir de tiempos de llegada y servicio conocidos."""
     if not tiempos_llegada or len(tiempos_llegada) != len(tiempos_servicio):
         raise ValueError("Se requiere igual cantidad no nula de tiempos.")
     if any(tiempo < 0 for tiempo in tiempos_llegada + tiempos_servicio):
@@ -129,4 +129,96 @@ def simular_cola_tiempos(
         "porcentaje_inactivo": (
             tiempo_inactivo_total / hora_fin_anterior * 100 if hora_fin_anterior else 0
         ),
+    }
+
+
+def simular_inventario(
+    valores_r: list[float],
+    demandas: list[int],
+    tiempos_entrega: list[int],
+    inventario_inicial: int = 150,
+    cantidad_pedido: int = 200,
+    punto_reorden: int = 100,
+) -> dict:
+    if not valores_r or len(valores_r) != len(demandas):
+        raise ValueError("Se necesita un R y una demanda para cada mes.")
+    if len(tiempos_entrega) != len(demandas):
+        raise ValueError("Se necesita un tiempo de entrega para cada mes.")
+    if inventario_inicial < 0 or cantidad_pedido <= 0 or punto_reorden < 0:
+        raise ValueError("Los parámetros de inventario deben ser válidos.")
+    if any(demanda < 0 for demanda in demandas):
+        raise ValueError("La demanda no puede ser negativa.")
+    if any(tiempo not in (1, 2, 3) for tiempo in tiempos_entrega):
+        raise ValueError("El tiempo de entrega debe ser de uno, dos o tres meses.")
+    if any(not 0 <= valor <= 1 for valor in valores_r):
+        raise ValueError("Cada R debe estar en el intervalo [0, 1].")
+
+    filas = []
+    entregas: dict[int, int] = {}
+    ordenes_en_transito = 0
+    siguiente_orden = 1
+    inventario_final_anterior = inventario_inicial
+    faltante_pendiente = 0
+
+    for indice, (valor_r, demanda, tiempo_entrega) in enumerate(
+        zip(valores_r, demandas, tiempos_entrega), 1
+    ):
+        recibido = entregas.pop(indice, 0)
+        if recibido:
+            ordenes_en_transito -= 1
+            disponible = inventario_final_anterior + recibido
+            backorder_surtido = min(disponible, faltante_pendiente)
+            inventario_inicial_mes = disponible - backorder_surtido
+            faltante_pendiente -= backorder_surtido
+        else:
+            inventario_inicial_mes = inventario_final_anterior
+
+        if inventario_inicial_mes >= demanda:
+            inventario_final = inventario_inicial_mes - demanda
+            faltante = 0
+            promedio = round((inventario_inicial_mes + inventario_final) / 2)
+        else:
+            inventario_final = 0
+            faltante = demanda - inventario_inicial_mes
+            faltante_pendiente += faltante
+            promedio = round(inventario_inicial_mes ** 2 / (2 * demanda)) if demanda else 0
+
+        orden = 0
+        if inventario_final <= punto_reorden and ordenes_en_transito == 0:
+            orden = siguiente_orden
+            siguiente_orden += 1
+            ordenes_en_transito += 1
+            mes_entrega = indice + tiempo_entrega
+            if mes_entrega <= len(demandas):
+                entregas[mes_entrega] = entregas.get(mes_entrega, 0) + cantidad_pedido
+            else:
+                ordenes_en_transito -= 1
+
+        filas.append({
+            "Mes": indice,
+            "Inventario inicial": inventario_inicial_mes,
+            "R demanda": valor_r,
+            "Demanda": demanda,
+            "Inventario final": inventario_final,
+            "Faltante": faltante,
+            "Orden": orden,
+            "Inventario mensual promedio": promedio,
+            "Recibo": recibido,
+            "Tiempo de entrega": tiempo_entrega if orden else None,
+        })
+        inventario_final_anterior = inventario_final
+
+    total_ordenes = siguiente_orden - 1
+    costo_ordenar = total_ordenes * 100
+    costo_inventario = sum(
+        fila["Inventario mensual promedio"] for fila in filas
+    ) * (20 / 12)
+    costo_faltante = sum(fila["Faltante"] for fila in filas) * 50
+    return {
+        "filas": filas,
+        "total_ordenes": total_ordenes,
+        "costo_ordenar": costo_ordenar,
+        "costo_inventario": costo_inventario,
+        "costo_faltante": costo_faltante,
+        "costo_total": costo_ordenar + costo_inventario + costo_faltante,
     }

@@ -1,4 +1,4 @@
-"""Catorce retos estocásticos generados dinámicamente por semilla."""
+"""Construye los retos de los catorce capítulos y valida sus respuestas."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ import sistemas_aplicados as sistemas
 import variables_no_uniformes as variables
 
 
-DURACION_CAPITULO = 600
 TITULOS = [
     "Generador Congruencial Mixto",
     "Generador Congruencial Multiplicativo",
@@ -26,9 +25,84 @@ TITULOS = [
     "Distribución Uniforme",
     "Distribución Empírica",
     "Distribución de Poisson",
-    "Colas de un Canal",
+    "Inventario Estocástico",
     "Juego de Volados: Martingala",
 ]
+
+METODOS_CAPITULO = {
+    1: "Generador Congruencial Mixto",
+    2: "Generador Congruencial Multiplicativo",
+    3: "Prueba de Promedios",
+    4: "Prueba de Kolmogorov-Smirnov (KS)",
+    5: "Prueba de Frecuencias (χ²)",
+    6: "Prueba de Distancias",
+    7: "Prueba de Series",
+    8: "Prueba de Póker",
+    9: "Generación de Variable Aleatoria con Distribución Exponencial (Transformada Inversa)",
+    10: "Generación de Variable Aleatoria con Distribución Uniforme (Transformada Inversa)",
+    11: "Generación de Variable Aleatoria con Distribución Empírica (por tramos)",
+    12: "Generación de Variable Aleatoria con Distribución de Poisson",
+    13: "Aplicación de Simulación: Sistema de Inventarios",
+    14: "Aplicación de Simulación: Juego de Volados (Estrategia Martingala)",
+}
+INTRO_NARRATIVAS = {
+    1: (
+        "La lluvia dejó una capa de agua sobre las ventanas de la unidad forense. En una terminal recuperada, la misma cifra aparece en tres libretas con horas distintas. El Arquitecto no dejó una firma directa: dejó una secuencia y la certeza de que alguien la usó para abrir una puerta. El técnico de guardia conserva los parámetros de inicio, pero no sabe si el ciclo vuelve al comienzo o se atasca antes.",
+        "Para reconstruir el rastro aplicarás el Generador Congruencial Mixto. Calcula cada término con el multiplicador, el incremento y el módulo indicados; registra también el residuo normalizado. Sigue la secuencia hasta cumplir la condición de paro y compara el periodo observado con el esperado. Si coincide, la libreta puede señalar la siguiente terminal; si no, habrá que buscar quién alteró los datos.",
+    ),
+    2: (
+        "El segundo registro estaba escondido detrás de un panel de fusibles. No tiene incremento: solo una semilla y un multiplicador que reaparece en documentos de una empresa ya cerrada. La patrulla encontró marcas de borrado junto a la palabra «periodo». Alguien quiso que la secuencia pareciera aleatoria, aunque el patrón quizá revele cada cuánto vuelve a repetirse.",
+        "El análisis requiere el Generador Congruencial Multiplicativo. Multiplica el valor actual por a, reduce el resultado módulo m y conserva el residuo como número rectangular. Completa las iteraciones necesarias para observar el ciclo y contrasta su longitud con el periodo esperado. La comparación permitirá decidir si la terminal pudo producir la cadena usada por El Arquitecto.",
+    ),
+    3: (
+        "Un paquete de recibos llegó sin remitente, con diez números anotados al margen. La tinta se corrió, pero las cifras sobrevivieron. En el reverso, una dirección conduce a un depósito que la policía registró hace meses sin encontrar nada. Antes de volver allí, necesitas saber si la muestra se comporta como una secuencia uniforme o si alguien escogió cada valor para dejar una pista.",
+        "Aplicarás la Prueba de Promedios a la muestra: calcula la media, construye el estadístico Z₀ y compáralo con el valor crítico de la tabla. El resultado no identifica por sí solo al sospechoso, pero permite evaluar si los datos se apartan de lo esperable bajo H₀. Guarda el veredicto; será la primera pieza estadística de la cadena de custodia.",
+    ),
+    4: (
+        "La muestra siguiente apareció en una cinta de respaldo fechada antes del allanamiento. Los valores no están ordenados y el informe que debía explicarlos fue arrancado. El jefe de turno sospecha que la cinta se editó después de su decomiso; en el laboratorio, sin embargo, cada decimal todavía puede compararse con la distribución que habría producido una secuencia uniforme.",
+        "Usa la Prueba de Kolmogorov-Smirnov (KS): ordena los datos, calcula la distribución acumulada empírica y encuentra la mayor diferencia respecto de i/N. Compara Dₙ con el valor crítico correspondiente al tamaño de la muestra. Así sabrás si la cinta ofrece una señal compatible con H₀ o si la alteración deja una desviación medible.",
+    ),
+    5: (
+        "En la oficina del puerto, cuatro archivadores guardan copias de la misma transmisión. Cada empleado anotó cuántas señales cayó en su intervalo, pero los totales no coinciden. El Arquitecto pudo repartir los datos para esconder una frecuencia anómala; la discrepancia también podría ser simple ruido. La fiscalía pide una prueba clara antes de intervenir el servidor.",
+        "La herramienta será la Prueba de Frecuencias (χ²). Divide el intervalo en clases, registra las frecuencias observadas y calcula las esperadas bajo una distribución uniforme. Suma las contribuciones para obtener χ₀² y compáralo con el valor crítico de la tabla, usando los grados de libertad adecuados. El veredicto determinará si el patrón justifica abrir los archivadores.",
+    ),
+    6: (
+        "Un técnico encontró números impresos en una tira térmica, cada uno con cinco decimales. Los dígitos se repiten con una regularidad incómoda; entre una repetición y otra quedan huecos que nadie había contado. La tira salió de una máquina expendedora frente al edificio donde desapareció el primer testigo. El rastro exige medir las distancias, no limitarse a mirar la secuencia.",
+        "Aplicarás la Prueba de Distancias: localiza la primera repetición de cada dígito, clasifica los huecos y agrupa las categorías que no alcancen la frecuencia esperada mínima. Calcula FO, FE y el estadístico χ₀² para los grupos resultantes. La comparación con el valor crítico permitirá decidir si la tira se parece al azar o conserva una estructura deliberada.",
+    ),
+    7: (
+        "Las cámaras del callejón grabaron una serie de entradas y salidas, pero sus relojes perdieron varios segundos. Lo único confiable es el orden de las señales. Un agente propone analizarlas por parejas consecutivas: si las cifras se relacionan, la secuencia podría reconstruir el recorrido que hizo el mensajero antes de desaparecer.",
+        "La Prueba de Series convierte cada pareja (Rᵢ,Rᵢ₊₁) en una celda de la cuadrícula. Cuenta las frecuencias observadas, calcula la frecuencia esperada por celda y forma χ₀² con los grados de libertad del diseño. El resultado permitirá evaluar la independencia entre valores consecutivos y decidir si el orden de la grabación aún puede usarse como evidencia.",
+    ),
+    8: (
+        "En el bolsillo de un abrigo apareció una hoja de cinco dígitos por línea. No hay nombres ni fechas, solo combinaciones que recuerdan las manos de una mesa de póker. La encargada del club reconoce el sistema: El Arquitecto clasificaba sus claves como si fueran jugadas y agrupaba las menos frecuentes para borrar diferencias incómodas.",
+        "Para comprobarlo aplicarás la Prueba de Póker. Clasifica los dígitos de cada número por patrón, cuenta FO y calcula FE con las probabilidades teóricas; después agrupa las categorías indicadas y obtiene χ₀². Compara el resultado con el crítico de tabla y registra el veredicto. Si la distribución no encaja, la hoja puede vincular el club con las claves interceptadas.",
+    ),
+    9: (
+        "El cajero nocturno recuerda que el mensajero llegaba cuando la calle quedaba vacía. Sus tiempos de servicio se anotaban en una libreta, aunque faltan cuatro marcas y el total de la noche fue escrito dos veces. La dirección del cajero coincide con una cuenta usada para pagar los equipos de comunicación de El Arquitecto.",
+        "Reconstruye los intervalos mediante la Generación de Variable Aleatoria con Distribución Exponencial (Transformada Inversa). Con cada R y el parámetro λ calcula T_Ai; luego suma los tiempos para T_TC y obtiene el promedio T_PA. El registro reconstruido permitirá comparar la duración de la visita con el horario de las llamadas interceptadas.",
+    ),
+    10: (
+        "Una fábrica de refrescos entregó sus registros después de que un supervisor denunciara alteraciones en la línea. Las cuatro mediciones conservadas parecen ocupar distintos puntos entre dos límites conocidos. El supervisor vio a un desconocido cambiar una etiqueta y salir con una caja; el número de lote coincide con el que aparece en el depósito.",
+        "Usa la Generación de Variable Aleatoria con Distribución Uniforme (Transformada Inversa). Para cada R aplica X=a+(b−a)R con los límites del problema y completa los tiempos de envasado. Contrasta los valores obtenidos con el rango permitido y conserva el resultado para la auditoría. La secuencia ayudará a identificar si el lote señalado se produjo bajo el mismo patrón.",
+    ),
+    11: (
+        "El mensaje recuperado del transmisor no sigue una sola curva. Un técnico encontró un cambio de regla en la mitad del intervalo y sospecha que el corte señala dónde El Arquitecto insertó una instrucción. La transmisión se usó la noche en que desapareció el mensajero; su duración puede confirmar si el mensaje cruzó completo la red.",
+        "La reconstrucción usa la Generación de Variable Aleatoria con Distribución Empírica (por tramos). Identifica el tramo que corresponde a cada R y aplica allí su función de transformación. Completa los valores Xᵢ, cuidando especialmente la frontera entre segmentos. El patrón resultante permitirá comparar el tiempo de transmisión con el registro del servidor y comprobar si alguien alteró el mensaje.",
+    ),
+    12: (
+        "El almacén recibe pedidos a intervalos irregulares y el encargado mantiene una tabla de demanda semanal. En sus márgenes hay una fecha marcada con tinta roja: coincide con la última llamada del mensajero. La policía no puede entrar sin justificar la intervención; primero necesita demostrar que la secuencia de demanda coincide con los registros de esa semana.",
+        "Aplicarás la Generación de Variable Aleatoria con Distribución de Poisson. Calcula las probabilidades y la acumulada F(x) hasta alcanzar el criterio indicado; después asigna cada R al intervalo F(x−1)<R≤F(x). Los valores obtenidos servirán para reconstruir la demanda y contrastarla con los movimientos declarados por el almacén.",
+    ),
+    13: (
+        "El almacén no estaba vacío cuando llegó la orden de registro. Doce meses de movimientos muestran entradas, faltantes y compras que nunca llegaron a los estantes. Las primeras nueve filas están respaldadas por la libreta oficial; las tres últimas quedaron incompletas tras una caída del sistema. El guardia recuerda una camioneta que entraba de madrugada y salía sin carga visible.",
+        "La investigación requiere la Aplicación de Simulación: Sistema de Inventarios. Usa las demandas y tiempos de entrega para completar los meses pendientes, identifica órdenes y faltantes, y calcula los costos de ordenar, mantener inventario y cubrir faltantes. El total permitirá comparar el libro contable con los recursos que El Arquitecto pudo mover sin dejar recibos.",
+    ),
+    14: (
+        "La última pista llegó como una secuencia de resultados de una mesa clandestina. El mensajero apostaba siempre el doble después de perder, convencido de que una victoria cubriría la deuda. La meta y el capital inicial están anotados en la libreta; el dinero desaparecido coincide con las transferencias que financiaron la red de terminales.",
+        "Cierra el caso con la Aplicación de Simulación: Juego de Volados (Estrategia Martingala). Recorre cada jugada, actualiza saldo y apuesta según el resultado y determina si la corrida alcanza la meta, se arruina o queda inconclusa. Calcula la probabilidad empírica de éxito con las corridas completadas. El resultado final mostrará cuánto dependía el plan de El Arquitecto de una racha favorable.",
+    ),
+}
 
 _R_PRUEBAS_MEDIOCURSO = [
     0.03991, 0.38555, 0.17546, 0.32643, 0.69572,
@@ -45,12 +119,6 @@ _R_POKER_MEDIOCURSO = [
 _R_VOLADOS_LIBRETA = [
     0.03991, 0.38555, 0.17546, 0.32843, 0.69572,
     0.24122, 0.61196, 0.88722, 0.65961, 0.03788,
-]
-_R_CAJA = [
-    9, 2, 6, 8, 6, 9, 4, 3, 5, 5, 5, 10, 2, 2, 4, 8, 8, 3, 6, 3,
-]
-_SERVICIO_CAJA = [
-    3, 2, 4, 6, 4, 4, 3, 3, 4, 4, 6, 3, 1, 4, 3, 2, 2, 3, 5, 2,
 ]
 _R_DISTRIBUCIONES = [0.76971, 0.82534, 0.63249, 0.11073]
 CASOS_OFICIALES_PDF = {
@@ -88,9 +156,26 @@ CASOS_OFICIALES_PDF = {
     11: {"valores_R": _R_DISTRIBUCIONES.copy()},
     12: {"valores_R": _R_DISTRIBUCIONES.copy(), "lambda": 5},
     13: {
-        "tiempos_llegada": _R_CAJA.copy(),
-        "tiempos_servicio": _SERVICIO_CAJA.copy(),
-        "a1": 1, "b1": 10, "a2": 1, "b2": 6,
+        "valores_R": [
+            0.74022, 0.65741, 0.66083, 0.08355, 0.55121, 0.00911,
+            0.14060, 0.14845, 0.41839, 0.39685, 0.74416, 0.53152,
+        ],
+        "demandas": [64, 52, 47, 31, 40, 25, 34, 38, 48, 58, 69, 76],
+        "filas": [
+            [1, 150, 0.74022, 64, 86, 0, 1, 118],
+            [2, 86, 0.65741, 52, 34, 0, 0, 60],
+            [3, 234, 0.66083, 47, 187, 0, 0, 211],
+            [4, 187, 0.08355, 31, 156, 0, 0, 172],
+            [5, 156, 0.55121, 40, 116, 0, 0, 136],
+            [6, 116, 0.00911, 25, 91, 0, 2, 104],
+            [7, 91, 0.14060, 34, 57, 0, 0, 74],
+            [8, 57, 0.14845, 38, 19, 0, 0, 38],
+            [9, 19, 0.41839, 48, 0, 29, 0, 4],
+            [10, 171, 0.39685, 58, 113, 0, 0, 142],
+            [11, 113, 0.74416, 69, 44, 0, 3, 79],
+            [12, 40, 0.53152, 76, 0, 30, 0, 11],
+        ],
+        "tiempos_entrega": [2, 2, 2, 2, 2, 3, 2, 2, 2, 2, 1, 2],
     },
     14: {
         "valores_R": _R_VOLADOS_LIBRETA.copy(),
@@ -114,7 +199,7 @@ ORIGEN_OFICIAL_PDF = {
     10: "Ordinario.pdf, capítulo 10: envasado de refrescos, uniforme U(2,4).",
     11: "Ordinario.pdf, capítulo 11: transmisión de mensajes, distribución empírica.",
     12: "Ordinario.pdf, capítulo 12: demanda semanal, Poisson con lambda=5.",
-    13: "Ordinario.pdf, capítulo 13: caja de supermercado, 20 clientes.",
+    13: "Libreta de apuntes, cap. 13: inventario estocástico, 12 meses.",
     14: "Libreta de apuntes, cap. 14: capital 30, apuesta 10, meta 50 y secuencia indicada.",
 }
 
@@ -131,7 +216,7 @@ def crear_caso(
     datos_oficiales = CASOS_OFICIALES_PDF.get(numero) if modo_ejecucion == "OFICIAL_PDF" else None
     caso = {
         "numero": numero, "titulo": TITULOS[numero - 1], "semilla": semilla,
-        "duracion": 720 if numero == 12 else DURACION_CAPITULO,
+        "intro_narrativa": "\n\n".join(INTRO_NARRATIVAS[numero]),
         "narrativa": "", "tabla": [], "formula": "",
         "formato": "", "campos": [], "esperado": {}, "auditoria": {},
         "respuestas": [], "modo_ejecucion": modo_ejecucion,
@@ -164,11 +249,35 @@ def crear_caso(
     elif numero == 12:
         _caso_poisson(caso, rng, datos_oficiales)
     elif numero == 13:
-        _caso_cola(caso, rng, datos_oficiales)
+        _caso_inventario(caso, rng, datos_oficiales)
     else:
         _caso_volados(caso, rng, datos_oficiales)
     _configurar_tabla_interactiva(caso)
+    caso["duracion"] = calcular_tiempo_capitulo(caso)
     return caso
+
+
+def calcular_tiempo_capitulo(caso: dict) -> int:
+    filas_a_calcular = 0
+    for seccion in caso["tabla_interactiva"]["secciones"]:
+        if seccion["filas_a_calcular"] is not None:
+            filas_a_calcular += seccion["filas_a_calcular"]
+            continue
+        filas_con_campos = [
+            fila for fila in seccion["filas"]
+            if any("campo" in celda for celda in fila)
+        ]
+        if seccion["dinamica"]:
+            filas_a_calcular += min(seccion["filas_paro"], len(filas_con_campos))
+        else:
+            filas_a_calcular += len(filas_con_campos)
+
+    celdas_editables = len(caso["campos"])
+    bono_complejidad = 120 if caso["numero"] in {6, 8, 12, 13} else 0
+    segundos = (
+        180 + filas_a_calcular * 25 + celdas_editables * 12 + bono_complejidad
+    )
+    return min(1080, max(240, segundos))
 
 
 def _caso_generador(
@@ -278,7 +387,8 @@ def _caso_generador(
         f"{nombre}{i}": fila[clave]
         for i, fila in enumerate(filas_calculo, 1)
         for nombre, clave in (
-            ("n", "n"), ("Xn", "Xn"), ("Xnext", "Xnext"), ("R", "R"),
+            ("n", "n"), ("Xn", "Xn"), ("operacion", "operacion"),
+            ("Xnext", "Xnext"), ("R", "R"),
         )
     }
     caso["esperado"]["periodo"] = "Aceptados" if ciclo_completo else "Rechazados"
@@ -288,9 +398,16 @@ def _caso_generador(
         "Xn+1 == X0 o Xn+1 == Xn" if numero == 1 else "Xn+1 == X0"
     )
     caso["tabla"] = [
-        ["n", "Xn", "Xn+1", "# Rectangular"],
+        [
+            "n", "Xn",
+            "(aXn+c) ÷ m" if numero == 1 else "aXn ÷ m",
+            "Xn+1", "# Rectangular",
+        ],
         *[
-            [fila["n"], fila["Xn"], fila["Xnext"], fila["R"]]
+            [
+                fila["n"], fila["Xn"], fila["operacion"],
+                fila["Xnext"], fila["R"],
+            ]
             for fila in filas_calculo
         ],
     ]
@@ -703,56 +820,110 @@ def _caso_poisson(caso: dict, rng: random.Random, oficial: dict | None = None) -
     }
 
 
-def _caso_cola(caso: dict, rng: random.Random, oficial: dict | None = None) -> None:
+def _caso_inventario(
+    caso: dict, rng: random.Random, oficial: dict | None = None,
+) -> None:
     if oficial:
-        tiempos_llegada = oficial["tiempos_llegada"].copy()
-        tiempos_servicio = oficial["tiempos_servicio"].copy()
-        parametros = {clave: oficial[clave] for clave in ("a1", "b1", "a2", "b2")}
-        resultado = sistemas.simular_cola_tiempos(tiempos_llegada, tiempos_servicio)
+        valores_r = oficial["valores_R"].copy()
+        demandas = oficial["demandas"].copy()
+        filas = [
+            dict(zip(
+                ("Mes", "Inventario inicial", "R demanda", "Demanda",
+                 "Inventario final", "Faltante", "Orden",
+                 "Inventario mensual promedio"),
+                valores,
+            ))
+            for valores in oficial["filas"]
+        ]
+        total_ordenes = 3
     else:
-        n = 12
-        r_llegada = [rng.random() for _ in range(n)]
-        r_servicio = [rng.random() for _ in range(n)]
-        parametros = {"a1": 2, "b1": 5, "a2": 1, "b2": 4}
-        resultado = sistemas.simular_cola(r_llegada, r_servicio, **parametros)
-        tiempos_llegada = r_llegada
-        tiempos_servicio = r_servicio
-    n = len(tiempos_llegada)
-    tabla = [list(resultado["filas"][0].keys())]
-    for indice, fila in enumerate(resultado["filas"]):
-        ultima_seccion = indice >= n - 3
-        tabla.append([
-            "?" if ultima_seccion and clave in {
-                "Hora inicio servicio", "Hora fin servicio", "Tiempo espera en sistema",
-                "Tiempo servidor inactivo",
-            } else round(valor, 3) if isinstance(valor, float) else valor
-            for clave, valor in fila.items()
-        ])
+        valores_r = [rng.random() for _ in range(12)]
+        demanda_empirica = sorted(CASOS_OFICIALES_PDF[13]["demandas"])
+        demandas = [
+            demanda_empirica[min(int(valor * len(demanda_empirica)), len(demanda_empirica) - 1)]
+            for valor in valores_r
+        ]
+        tiempos_entrega = [rng.choice((1, 2, 3)) for _ in range(12)]
+        resultado = sistemas.simular_inventario(
+            valores_r, demandas, tiempos_entrega,
+        )
+        filas = resultado["filas"]
+        total_ordenes = resultado["total_ordenes"]
+
+    costo_ordenar = total_ordenes * 100
+    costo_inventario = sum(
+        fila["Inventario mensual promedio"] for fila in filas
+    ) * (20 / 12)
+    costo_faltante = sum(fila["Faltante"] for fila in filas) * 50
+    costo_total = costo_ordenar + costo_inventario + costo_faltante
+
     caso["narrativa"] = (
-        "Sección de caja de supermercado: 20 clientes, llegadas U(1,10) min "
-        "y atención U(1,6) min. Completa las tres últimas filas y calcula el "
-        "tiempo promedio en el sistema y el porcentaje de inactividad."
+        "Simula 12 meses con inventario inicial de 150 unidades, pedido de 200 "
+        "y punto de reorden de 100. Usa los R y la demanda mensual de la tabla. "
+        "La libreta fija las filas de los meses 1 a 9; completa los meses 10 a 12 "
+        "y calcula los cuatro costos."
         if oficial else
-        "Simula 12 clientes: llegadas U(2,5) y servicio U(1,4). "
-        "Completa las últimas filas y calcula permanencia promedio e inactividad del servidor."
+        "Simula 12 meses con inventario inicial de 150 unidades, pedido de 200 "
+        "y punto de reorden de 100. La demanda se genera a partir de la muestra "
+        "empírica del ejercicio; el tiempo de entrega de cada pedido es de uno a "
+        "tres meses. Completa los últimos tres meses y calcula los costos."
     )
-    caso["tabla"] = tabla
-    caso["formato"] = "Ingresa el tiempo promedio en el sistema (min) y el % inactivo."
-    caso["campos"] = [
-        _campo("promedio", "Permanencia promedio (min)", "decimal"),
-        _campo("inactividad", "Servidor inactivo (%)", "porcentaje"),
+    caso["tabla"] = [
+        ["Mes", "Inv. inicial", "R demanda", "Demanda", "Inv. final",
+         "Faltante", "Orden", "Inv. mensual promedio"],
+        *[
+            [
+                fila["Mes"], fila["Inventario inicial"], f'{fila["R demanda"]:.5f}',
+                fila["Demanda"],
+                "?" if fila["Mes"] >= 10 else fila["Inventario final"],
+                "?" if fila["Mes"] >= 10 else fila["Faltante"],
+                "?" if fila["Mes"] >= 10 else fila["Orden"],
+                "?" if fila["Mes"] >= 10 else fila["Inventario mensual promedio"],
+            ]
+            for fila in filas
+        ],
     ]
-    caso["esperado"] = {
-        "promedio": resultado["promedio_sistema"],
-        "inactividad": resultado["porcentaje_inactivo"],
-    }
+    caso["formato"] = (
+        "Completa inventario final, faltante, órdenes y promedio mensual. "
+        "Después ingresa los costos de ordenar, mantener inventario, faltantes y total."
+    )
+    caso["campos"] = [
+        _campo("costo_ordenar", "Costo de ordenar", "decimal"),
+        _campo(
+            "costo_inventario", "Costo de inventario", "decimal", tolerancia=3,
+        ),
+        _campo("costo_faltante", "Costo de faltante", "decimal"),
+        _campo("costo_total", "Costo total", "decimal", tolerancia=3),
+    ]
+    for fila in filas[9:]:
+        for clave, valor in (
+            ("inventario_final", fila["Inventario final"]),
+            ("faltante", fila["Faltante"]),
+            ("orden", fila["Orden"]),
+            ("inventario_promedio", fila["Inventario mensual promedio"]),
+        ):
+            caso["esperado"][f"c13_{fila['Mes']}_{clave}"] = valor
+    caso["esperado"].update({
+        "costo_ordenar": costo_ordenar,
+        "costo_inventario": costo_inventario,
+        "costo_faltante": costo_faltante,
+        "costo_total": costo_total,
+    })
     caso["auditoria"] = {
-        "parametros": parametros,
-        "tiempos_llegada": tiempos_llegada if oficial else None,
-        "tiempos_servicio": tiempos_servicio if oficial else None,
-        "R_llegada": None if oficial else r_llegada,
-        "R_servicio": None if oficial else r_servicio,
-        **resultado,
+        "parametros": {
+            "meses": 12, "inventario_inicial": 150, "cantidad_pedido": 200,
+            "punto_reorden": 100, "costo_orden": 100,
+            "costo_mantenimiento_unidad_anual": 20,
+            "costo_faltante_unidad": 50,
+        },
+        "valores_R": valores_r,
+        "demandas": demandas,
+        "filas": filas,
+        "total_ordenes": total_ordenes,
+        "costo_ordenar": costo_ordenar,
+        "costo_inventario": costo_inventario,
+        "costo_faltante": costo_faltante,
+        "costo_total": costo_total,
     }
 
 
@@ -848,6 +1019,19 @@ def validar_respuesta(
             else:
                 correctos.append(clave)
             continue
+        if campo["tipo"] == "operacion":
+            try:
+                valor_operacion = _parsear_operacion(texto)
+                esperado_operacion = _parsear_operacion(str(esperado))
+            except (ValueError, ZeroDivisionError):
+                formatos_invalidos.append(clave)
+                errores.append(clave)
+                continue
+            if valor_operacion == esperado_operacion:
+                correctos.append(clave)
+            else:
+                errores.append(clave)
+            continue
         if campo["tipo"].startswith("fracción"):
             try:
                 valor_fraccion = Fraction(texto)
@@ -869,7 +1053,7 @@ def validar_respuesta(
                 continue
             if not isclose(
                 valor_decimal, float(esperado_fraccion), rel_tol=0,
-                abs_tol=tolerancia,
+                abs_tol=campo.get("tolerancia", tolerancia),
             ):
                 errores.append(clave)
             else:
@@ -888,7 +1072,10 @@ def validar_respuesta(
             valor *= 100
         if campo["tipo"] == "entero" and not valor.is_integer():
             errores.append(clave)
-        elif not isclose(valor, float(esperado), rel_tol=0, abs_tol=tolerancia):
+        elif not isclose(
+            valor, float(esperado), rel_tol=0,
+            abs_tol=campo.get("tolerancia", tolerancia),
+        ):
             errores.append(clave)
         else:
             correctos.append(clave)
@@ -926,10 +1113,92 @@ def validar_respuesta(
     }
 
 
+def _parsear_operacion(texto: str) -> Fraction:
+    if "+" in texto:
+        cociente, residuo = texto.split("+", 1)
+        return Fraction(cociente) + Fraction(residuo)
+    return Fraction(texto)
+
+
 def _campo(
-    identificador: str, etiqueta: str, tipo: str, opciones: list[str] | None = None
+    identificador: str, etiqueta: str, tipo: str,
+    opciones: list[str] | None = None, tolerancia: float | None = None,
 ) -> dict:
-    return {"id": identificador, "etiqueta": etiqueta, "tipo": tipo, "opciones": opciones or []}
+    campo = {
+        "id": identificador, "etiqueta": etiqueta,
+        "tipo": tipo, "opciones": opciones or [],
+    }
+    if tolerancia is not None:
+        campo["tolerancia"] = tolerancia
+    return campo
+
+
+def _placeholder_ejemplo(numero: int, identificador: str) -> str:
+    if numero in (1, 2):
+        if identificador.startswith("operacion"):
+            return "ej. 1+36/100"
+        if identificador.startswith(("Xn", "Xnext")):
+            return "ej. 36"
+        if identificador.startswith("R"):
+            return "ej. 36/100"
+        return "ej. 1"
+    if numero == 3:
+        return {
+            "media": "ej. 0.3302", "z0": "ej. 1.8604",
+            "zcrit": "ej. 1.96",
+        }.get(identificador, "ej. 0.3302")
+    if numero == 4:
+        return "ej. 0.409" if identificador == "critico_tabla" else "ej. 0.3177"
+    if numero == 5:
+        if identificador.startswith("FO"):
+            return "ej. 4"
+        return "ej. 4.40" if identificador == "chi0" else "ej. 7.81"
+    if numero == 6:
+        if identificador.startswith("FO"):
+            return "ej. 4"
+        if identificador.startswith("FE"):
+            return "ej. 2.71"
+        return "ej. 20.0265" if identificador == "chi0" else "ej. 3.84"
+    if numero == 7:
+        if identificador.startswith("FO"):
+            return "ej. 5"
+        if identificador == "FE_pareja":
+            return "ej. 2.25"
+        return "ej. 5.6667" if identificador == "chi0" else "ej. 7.81"
+    if numero == 8:
+        if identificador.startswith("FO"):
+            return "ej. 6"
+        if identificador.startswith("FEp"):
+            return "ej. 5.0400"
+        return "ej. 0.3529" if identificador == "chi0" else "ej. 3.84"
+    if numero == 9:
+        return "ej. 0.0872" if identificador.startswith("T") else (
+            "ej. 1.0375" if identificador == "total" else "ej. 0.2594"
+        )
+    if numero in (10, 11):
+        return "ej. 3.5394" if numero == 10 else "ej. 1.5394"
+    if numero == 12:
+        if identificador.startswith("pois_f"):
+            return "ej. 0.1755"
+        if identificador.startswith("pois_F"):
+            return "ej. 0.4405"
+        return "ej. 7"
+    if numero == 13:
+        if identificador.endswith("_orden"):
+            return "ej. 1"
+        return {
+            "costo_ordenar": "ej. 300",
+            "costo_inventario": "ej. 1915",
+            "costo_faltante": "ej. 2950",
+            "costo_total": "ej. 5168",
+        }.get(identificador, "ej. 150")
+    if identificador.startswith("probabilidad"):
+        return "ej. 0.50"
+    if identificador.startswith("apuesta"):
+        return "ej. 10"
+    if identificador.startswith(("antes", "despues")):
+        return "ej. 30"
+    return "ej. 10"
 
 
 def _configurar_tabla_interactiva(caso: dict) -> None:
@@ -951,6 +1220,8 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
         if existente is not None:
             return existente
         campo = _campo(identificador, etiqueta, tipo, opciones)
+        if tipo != "selector":
+            campo["placeholder_text"] = _placeholder_ejemplo(numero, identificador)
         campos.append(campo)
         return campo
 
@@ -966,6 +1237,8 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
 
     def agregar_pie(identificador: str) -> None:
         original = campos_originales[identificador]
+        if original["tipo"] != "selector":
+            original["placeholder_text"] = _placeholder_ejemplo(numero, identificador)
         campos.append(original)
         caso["esperado"][identificador] = esperado_original[identificador]
         pie.append(identificador)
@@ -977,9 +1250,11 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
         scrollable: bool = True,
         visual: str | None = None,
         maximo: int | None = None,
+        filas_a_calcular: int | None = None,
     ) -> None:
         secciones.append({
             "id": clave, "titulo": titulo, "columnas": columnas, "filas": filas,
+            "filas_a_calcular": filas_a_calcular,
             "dinamica": dinamica, "filas_iniciales": iniciales,
             "filas_paro": paro if paro is not None else len(filas),
             "max_filas": maximo if maximo is not None else len(filas),
@@ -999,6 +1274,11 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
             filas.append([
                 celda_editable(f"n{indice}", f"n fila {indice}", fila["n"], "entero"),
                 celda_editable(f"Xn{indice}", f"Xn fila {indice}", fila["Xn"], "entero"),
+                celda_editable(
+                    f"operacion{indice}",
+                    "(aXₙ+c) ÷ m" if numero == 1 else "aXₙ ÷ m",
+                    fila["operacion"], "operacion",
+                ),
                 celda_editable(f"Xnext{indice}", f"Xn+1 fila {indice}", fila["Xnext"], "entero"),
                 celda_editable(
                     f"R{indice}", f"R{indice} (ej. 27/64)", fila["R"],
@@ -1007,7 +1287,11 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
             ])
         agregar_seccion(
             "iteraciones", "Iteraciones del generador",
-            ["n", "Xn", "Xn+1", "# Rectangular"],
+            [
+                "n", "Xn",
+                "(aXₙ+c) ÷ m" if numero == 1 else "aXₙ ÷ m",
+                "Xn+1", "# Rectangular",
+            ],
             filas, dinamica=True, iniciales=min(3, parar_en), paro=parar_en,
             maximo=(
                 len(filas) if caso["modo_ejecucion"] == "OFICIAL_PDF"
@@ -1229,31 +1513,45 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
                         ["i", "Rᵢ", "Xᵢ"], filas_mapeo)
     elif numero == 13:
         filas = []
-        for indice, fila in enumerate(caso["auditoria"]["filas"], 1):
-            valores = list(fila.values())
-            if indice >= len(caso["auditoria"]["filas"]) - 2:
-                editables = {
-                    "Hora inicio servicio", "Hora fin servicio",
-                    "Tiempo espera en sistema", "Tiempo servidor inactivo",
-                }
-                celdas = []
-                for columna, (clave, valor) in enumerate(fila.items()):
-                    if clave in editables:
-                        campo = f"c13_{indice}_{columna}"
-                        celdas.append(celda_editable(campo, clave, valor))
-                    else:
-                        celdas.append(celda_dada(round(valor, 3) if isinstance(valor, float) else valor))
-            else:
-                celdas = [
-                    celda_dada(round(valor, 3) if isinstance(valor, float) else valor)
-                    for valor in valores
-                ]
+        encabezados = [
+            "Mes", "Inv. inicial", "R demanda", "Demanda",
+            "Inv. final", "Faltante", "Orden", "Inv. mensual promedio",
+        ]
+        for fila in caso["auditoria"]["filas"]:
+            celdas = [
+                celda_dada(fila["Mes"]),
+                celda_dada(fila["Inventario inicial"]),
+                celda_dada(f'{fila["R demanda"]:.5f}'),
+                celda_dada(fila["Demanda"]),
+            ]
+            for clave, etiqueta in (
+                ("inventario_final", "Inv. final"),
+                ("faltante", "Faltante"),
+                ("orden", "Orden"),
+                ("inventario_promedio", "Inv. mensual promedio"),
+            ):
+                if fila["Mes"] >= 10:
+                    celdas.append(celda_editable(
+                        f'c13_{fila["Mes"]}_{clave}', etiqueta,
+                        caso["esperado"][f'c13_{fila["Mes"]}_{clave}'],
+                        "entero",
+                    ))
+                else:
+                    nombre = {
+                        "inventario_final": "Inventario final",
+                        "faltante": "Faltante",
+                        "orden": "Orden",
+                        "inventario_promedio": "Inventario mensual promedio",
+                    }[clave]
+                    celdas.append(celda_dada(fila[nombre]))
             filas.append(celdas)
         agregar_seccion(
-            "cola", "Eventos de la cola de un canal",
-            list(caso["auditoria"]["filas"][0].keys()), filas,
+            "inventario", "Simulación de inventario por mes",
+            encabezados, filas, filas_a_calcular=12,
         )
-        for clave in ("promedio", "inactividad"):
+        for clave in (
+            "costo_ordenar", "costo_inventario", "costo_faltante", "costo_total",
+        ):
             agregar_pie(clave)
     else:
         filas = []

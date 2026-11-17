@@ -1,49 +1,120 @@
-import unittest
+import inspect
 import json
+import tempfile
+import unittest
 from fractions import Fraction
+from pathlib import Path
+from unittest.mock import patch
 
 import casos_narrativa
 import motores_generadores as generadores
 import pruebas_estadisticas as estadisticas
+import main as modulo_main
+import revision as modulo_revision
 import sistemas_aplicados as sistemas
 import variables_no_uniformes as variables
-from main import (
-    PENALIZACION_SEGUNDOS,
-    ajustar_cantidad_filas,
+from revision import (
     _analisis_transitorio_estable,
     _extraer_resultados_pruebas,
     construir_documento_auditoria,
+    construir_respuestas_exactas,
+)
+from main import (
+    ExpedienteMontecarlo,
+    PENALIZACION_SEGUNDOS,
+    ajustar_cantidad_filas,
     crear_savegame,
+    encabezado_transicion,
     estado_reloj,
     estado_nodo,
+    hay_partida_guardada,
+    leer_valores_entrada,
     minimo_segundos_humanos,
+    modo_ejecucion_desde_juego,
+    modo_juego_normalizado,
+    narrativa_transicion,
     normalizar_savegame,
     resultado_final,
 )
 
 
 class TemporizadorTests(unittest.TestCase):
-    def test_duracion_de_capitulos_y_ajustes_de_reloj(self):
-        self.assertEqual(casos_narrativa.DURACION_CAPITULO, 600)
+    def test_duracion_dinamica_de_capitulos(self):
         for numero in range(1, 15):
             with self.subTest(capitulo=numero):
-                duracion = 720 if numero == 12 else 600
+                caso = casos_narrativa.crear_caso(numero, numero)
                 self.assertEqual(
-                    casos_narrativa.crear_caso(numero, numero)["duracion"], duracion,
+                    caso["duracion"], casos_narrativa.calcular_tiempo_capitulo(caso),
                 )
+                self.assertGreaterEqual(caso["duracion"], 240)
+                self.assertLessEqual(caso["duracion"], 1080)
+
+        corto = casos_narrativa.crear_caso(10, 10)
+        extenso = casos_narrativa.crear_caso(2, 10, "OFICIAL_PDF")
+        poisson = casos_narrativa.crear_caso(12, 10, "OFICIAL_PDF")
+        inventario = casos_narrativa.crear_caso(13, 10, "OFICIAL_PDF")
+        self.assertEqual(corto["duracion"], 328)
+        self.assertGreater(extenso["duracion"], corto["duracion"])
+        self.assertEqual(extenso["duracion"], 1080)
+        self.assertGreater(poisson["duracion"], corto["duracion"])
+        self.assertEqual(inventario["duracion"], 792)
 
     def test_colores_y_penalizacion_en_los_limites(self):
-        self.assertEqual(estado_reloj(181), "verde")
-        self.assertEqual(estado_reloj(180), "amarillo")
-        self.assertEqual(estado_reloj(61), "amarillo")
-        self.assertEqual(estado_reloj(60), "rojo")
-        self.assertEqual(estado_reloj(0), "rojo")
+        self.assertEqual(estado_reloj(351, 1000), "verde")
+        self.assertEqual(estado_reloj(350, 1000), "amarillo")
+        self.assertEqual(estado_reloj(151, 1000), "amarillo")
+        self.assertEqual(estado_reloj(150, 1000), "rojo")
+        self.assertEqual(estado_reloj(0, 1000), "rojo")
         self.assertEqual(PENALIZACION_SEGUNDOS, 25)
+
+
+class VerificacionEntornoTests(unittest.TestCase):
+    class TkFalso:
+        def withdraw(self):
+            pass
+
+        def update_idletasks(self):
+            pass
+
+        def winfo_screenwidth(self):
+            return 1920
+
+        def winfo_screenheight(self):
+            return 1080
+
+        def destroy(self):
+            pass
+
+    def test_preflight_carga_tk_assets_y_ruta_de_guardado_escribible(self):
+        with patch("tkinter.Tk", return_value=self.TkFalso()):
+            modulo_main.verificar_entorno_ejecucion()
+        self.assertEqual(
+            modulo_main.ARCHIVO_SAVEGAME,
+            Path(modulo_main.__file__).resolve().with_name("savegame.json"),
+        )
+
+    def test_preflight_redirige_guardado_a_localappdata_si_no_hay_permiso(self):
+        guardado_original = modulo_main.ARCHIVO_SAVEGAME
+        with tempfile.TemporaryDirectory() as directorio:
+            with (
+                patch.dict("os.environ", {"LOCALAPPDATA": directorio}),
+                patch("tkinter.Tk", return_value=self.TkFalso()),
+                patch("main._probar_escritura", side_effect=(False, True)),
+                patch.object(modulo_main, "ARCHIVO_SAVEGAME", guardado_original),
+            ):
+                modulo_main.verificar_entorno_ejecucion()
+                ruta_guardada = modulo_main.ARCHIVO_SAVEGAME
+                self.assertEqual(
+                    ruta_guardada,
+                    Path(directorio) / "ExpedienteMontecarlo" / "savegame.json",
+                )
+                self.assertTrue(ruta_guardada.is_file())
 
     def test_savegame_progreso_y_umbral_antitrampa(self):
         guardado = crear_savegame("OFICIAL_PDF", "Detective Vance")
         self.assertEqual(guardado["modo"], "OFICIAL_PDF")
         self.assertEqual(guardado["alias"], "Detective Vance")
+        self.assertEqual(guardado["capitulo_actual"], 1)
         self.assertEqual(estado_nodo(1, guardado), "○")
         self.assertEqual(estado_nodo(2, guardado), "🔒")
 
@@ -65,13 +136,440 @@ class TemporizadorTests(unittest.TestCase):
         self.assertEqual(normalizado["modo"], "DINAMICO")
         self.assertEqual(normalizado["alias"], "Forense")
         self.assertEqual(normalizado["capitulo"], 14)
+        self.assertEqual(normalizado["capitulo_actual"], 14)
         self.assertEqual(normalizado["estrellas"], [1])
         self.assertEqual(normalizado["fallidos"], [2])
+        self.assertEqual(
+            normalizar_savegame({
+                "capitulo": 3, "capitulo_actual": 8, "alias": "Detective",
+            })["capitulo"],
+            8,
+        )
 
         caso_pequeno = casos_narrativa.crear_caso(3, 10)
         caso_grande = casos_narrativa.crear_caso(2, 10, "OFICIAL_PDF")
-        self.assertEqual(minimo_segundos_humanos(caso_pequeno), 15)
-        self.assertEqual(minimo_segundos_humanos(caso_grande), 30)
+        self.assertEqual(
+            minimo_segundos_humanos(caso_pequeno),
+            max(12, len(caso_pequeno["campos"]) * 2),
+        )
+        self.assertEqual(
+            minimo_segundos_humanos(caso_grande),
+            max(12, len(caso_grande["campos"]) * 2),
+        )
+
+
+class TransicionesTests(unittest.TestCase):
+    def test_pantalla_de_transicion_muestra_resultado_y_guarda(self):
+        class WidgetFalso:
+            def __init__(self):
+                self.configuracion = {}
+                self.mostrado = False
+
+            def configure(self, **valores):
+                self.configuracion.update(valores)
+
+            def grid(self):
+                self.mostrado = True
+
+            def actualizar(self, *_argumentos):
+                pass
+
+        class AplicacionFalsa:
+            def _ocultar_pantallas(self):
+                pass
+
+            def _guardar_progreso(self):
+                self.guardados += 1
+                self.capitulo_guardado = self.savegame.get("capitulo_actual")
+
+            def _mostrar_menu(self):
+                self.menu_mostrado = True
+
+        app = AplicacionFalsa()
+        app.investigacion_iniciada = True
+        app.capitulo = 1
+        app.completados = {1}
+        app.savegame = {
+            "resultado_actual": "limpio",
+            "alias": "Detective Vance",
+            "viaje_tiempo": False,
+            "pendientes_rehacer": [],
+        }
+        app.guardados = 0
+        app.boton_descanso_continuar = WidgetFalso()
+        app.descanso_titulo = WidgetFalso()
+        app.descanso_texto = WidgetFalso()
+        app.descanso_frame = WidgetFalso()
+        app.descanso_visual = WidgetFalso()
+
+        ExpedienteMontecarlo._mostrar_descanso(app, "Nodo asegurado.")
+
+        self.assertEqual(app.guardados, 1)
+        self.assertEqual(app.capitulo_guardado, 2)
+        self.assertEqual(app.savegame["capitulo"], 2)
+        self.assertEqual(
+            app.descanso_titulo.configuracion["text"],
+            f"{encabezado_transicion('limpio')}\nESTRELLAS: 1 / 14",
+        )
+        self.assertEqual(
+            app.boton_descanso_continuar.configuracion["text"],
+            "Continuar al Capítulo 2",
+        )
+        self.assertTrue(app.descanso_frame.mostrado)
+        self.assertIn("El primer cuaderno", app.descanso_texto.configuracion["text"])
+
+        ExpedienteMontecarlo._guardar_y_volver_menu(app)
+        self.assertEqual(app.guardados, 2)
+        self.assertTrue(app.menu_mostrado)
+
+        app.capitulo = 14
+        app.savegame["resultado_actual"] = "tiempo_agotado"
+        ExpedienteMontecarlo._mostrar_descanso(app, "Último nodo.")
+        self.assertEqual(
+            app.boton_descanso_continuar.configuracion["text"],
+            "Evaluar estrellas",
+        )
+        self.assertIn(
+            encabezado_transicion("tiempo_agotado"),
+            app.descanso_titulo.configuracion["text"],
+        )
+
+    def test_narrativas_reaccionan_al_resultado_y_al_capitulo(self):
+        self.assertNotEqual(
+            narrativa_transicion(1, "limpio"),
+            narrativa_transicion(2, "limpio"),
+        )
+        self.assertNotEqual(
+            narrativa_transicion(1, "tiempo_agotado"),
+            narrativa_transicion(2, "tiempo_agotado"),
+        )
+        self.assertIn("cadena de custodia", narrativa_transicion(1, "anti_trampa"))
+        self.assertIn("REGISTRO COMPROMETIDO", encabezado_transicion("anti_trampa"))
+        self.assertIn("TIEMPO AGOTADO", encabezado_transicion("tiempo_agotado"))
+
+    def test_continuar_tras_agotar_tiempo_guarda_el_siguiente_capitulo(self):
+        class AplicacionFalsa:
+            def _cargar_caso_actual(self):
+                self.savegame["capitulo"] = self.capitulo
+                self._guardar_progreso()
+
+            def _guardar_progreso(self):
+                self.guardado = self.savegame["capitulo"]
+
+            def _mostrar_interludio(self):
+                self.interludio_mostrado = True
+
+        app = AplicacionFalsa()
+        app.capitulo = 1
+        app.savegame = {
+            "pendientes_rehacer": [],
+            "viaje_tiempo": False,
+            "resultado_actual": "tiempo_agotado",
+        }
+
+        ExpedienteMontecarlo._continuar_desde_descanso(app)
+
+        self.assertEqual(app.capitulo, 2)
+        self.assertEqual(app.guardado, 2)
+        self.assertEqual(app.savegame["resultado_actual"], "")
+        self.assertTrue(app.interludio_mostrado)
+
+    def test_capitulo_14_continua_a_la_evaluacion_final(self):
+        class AplicacionFalsa:
+            def _guardar_progreso(self):
+                self.guardado = dict(self.savegame)
+
+            def _mostrar_final(self):
+                self.final_mostrado = True
+
+        app = AplicacionFalsa()
+        app.capitulo = 14
+        app.savegame = {
+            "capitulo": 14,
+            "pendientes_rehacer": [],
+            "viaje_tiempo": False,
+            "resultado_actual": "limpio",
+        }
+
+        ExpedienteMontecarlo._continuar_desde_descanso(app)
+
+        self.assertEqual(app.guardado["capitulo"], 14)
+        self.assertEqual(app.guardado["resultado_actual"], "")
+        self.assertTrue(app.final_mostrado)
+
+    def test_boton_de_tabla_completa_ausente(self):
+        codigo = inspect.getsource(ExpedienteMontecarlo._crear_pestana_expediente)
+        self.assertNotIn("Ver tabla completa / auditoría", codigo)
+
+    def test_continuar_partida_guardada_omite_archivo_de_ingreso(self):
+        class AplicacionFalsa:
+            def _mostrar_interludio(self):
+                self.briefing = True
+
+            def _nuevo_juego(self, modo):
+                self.archivo_ingreso = True
+
+            def _continuar_investigacion(self):
+                self.continuada = True
+
+        app = AplicacionFalsa()
+        app.savegame = {
+            "alias": "Detective Vance",
+            "activo": True,
+            "modo": "OFICIAL_PDF",
+            "modo_juego": "OFICIAL",
+            "capitulo": 5,
+            "capitulo_actual": 5,
+            "estrellas": [1, 2, 3, 4],
+            "fallidos": [],
+        }
+
+        self.assertTrue(hay_partida_guardada(app.savegame))
+        ExpedienteMontecarlo._continuar_investigacion(app)
+        self.assertEqual(app.capitulo, 5)
+        self.assertEqual(app.caso["numero"], 5)
+        self.assertTrue(app.briefing)
+        self.assertFalse(hasattr(app, "archivo_ingreso"))
+
+        ExpedienteMontecarlo._nuevo_juego(app, "DINAMICO")
+        self.assertTrue(app.continuada)
+        self.assertFalse(hasattr(app, "archivo_ingreso"))
+
+    def test_capitulo_actual_avanza_para_cada_resultado_final(self):
+        class WidgetFalso:
+            def configure(self, **_valores):
+                pass
+
+            def grid(self):
+                pass
+
+            def actualizar(self, *_argumentos):
+                pass
+
+        class AplicacionFalsa:
+            def _ocultar_pantallas(self):
+                pass
+
+            def _guardar_progreso(self):
+                self.capitulo_guardado = self.savegame["capitulo_actual"]
+
+        for resultado in ("limpio", "tiempo_agotado", "anti_trampa"):
+            with self.subTest(resultado=resultado):
+                app = AplicacionFalsa()
+                app.capitulo = 7
+                app.completados = {1, 2}
+                app.investigacion_iniciada = True
+                app.savegame = {
+                    "resultado_actual": resultado,
+                    "alias": "Detective Vance",
+                    "viaje_tiempo": False,
+                    "pendientes_rehacer": [],
+                    "estrellas": [1, 2],
+                }
+                app.boton_descanso_continuar = WidgetFalso()
+                app.descanso_titulo = WidgetFalso()
+                app.descanso_texto = WidgetFalso()
+                app.descanso_frame = WidgetFalso()
+                app.descanso_visual = WidgetFalso()
+
+                ExpedienteMontecarlo._mostrar_descanso(app, "Fin del nodo.")
+
+                self.assertEqual(app.savegame["capitulo_actual"], 8)
+                self.assertEqual(app.capitulo_guardado, 8)
+
+    def test_guardar_progreso_persiste_el_capitulo_actual_canonico(self):
+        class AplicacionFalsa:
+            def _guardar_progreso(self):
+                ExpedienteMontecarlo._guardar_progreso(self)
+
+        app = AplicacionFalsa()
+        app.capitulo = 7
+        app.modo_ejecucion = "DINAMICO"
+        app.completados = {7}
+        app.capitulos_fallidos = set()
+        app.savegame = {
+            "capitulo": 7,
+            "capitulo_actual": 8,
+            "estrellas": [7],
+            "fallidos": [],
+        }
+        with tempfile.TemporaryDirectory() as directorio:
+            archivo = Path(directorio) / "savegame.json"
+            with patch("main.ARCHIVO_SAVEGAME", archivo):
+                app._guardar_progreso()
+            guardado = json.loads(archivo.read_text(encoding="utf-8"))
+
+        self.assertEqual(guardado["capitulo"], 8)
+        self.assertEqual(guardado["capitulo_actual"], 8)
+
+    def test_controles_de_navegacion_y_auditoria_solo_viven_en_revision(self):
+        interfaz = inspect.getsource(ExpedienteMontecarlo._construir_interfaz)
+        expediente = inspect.getsource(ExpedienteMontecarlo._crear_pestana_expediente)
+        revision = inspect.getsource(modulo_revision._mostrar_respuestas_exactas)
+        self.assertNotIn("CTkTabview", interfaz)
+        self.assertNotIn("_crear_pestana_auditoria", interfaz)
+        self.assertNotIn("← Anterior", expediente)
+        self.assertNotIn("Siguiente →", expediente)
+        self.assertNotIn("selector_capitulo", expediente)
+        self.assertIn("Auditoría V&V", revision)
+        self.assertIn("selector_revision", revision)
+
+
+class ModoPartidaTests(unittest.TestCase):
+    class WidgetFalso:
+        def __init__(self):
+            self.visible = True
+            self.configuracion = {}
+
+        def grid(self):
+            self.visible = True
+
+        def grid_remove(self):
+            self.visible = False
+
+        def configure(self, **valores):
+            self.configuracion.update(valores)
+
+    def test_modo_se_guarda_bloqueado_y_se_conserva_al_continuar(self):
+        for modo in ("OFICIAL", "DINAMICO"):
+            with self.subTest(modo=modo):
+                guardado = crear_savegame(modo, "Detective Vance")
+                guardado.update({"activo": True, "capitulo_actual": 6})
+                guardado = normalizar_savegame(guardado)
+
+                class AplicacionFalsa:
+                    def _mostrar_interludio(self):
+                        self.briefing = True
+
+                    def _continuar_investigacion(self):
+                        ExpedienteMontecarlo._continuar_investigacion(self)
+
+                app = AplicacionFalsa()
+                app.savegame = guardado
+                ExpedienteMontecarlo._continuar_investigacion(app)
+
+                self.assertEqual(app.savegame["modo_juego"], modo)
+                self.assertEqual(
+                    app.modo_ejecucion, modo_ejecucion_desde_juego(modo),
+                )
+                self.assertEqual(modo_juego_normalizado(app.modo_ejecucion), modo)
+                self.assertEqual(app.capitulo, 6)
+                self.assertTrue(app.briefing)
+                otro_modo = "DINAMICO" if modo == "OFICIAL" else "OFICIAL"
+                ExpedienteMontecarlo._nuevo_juego(app, otro_modo)
+                self.assertEqual(app.modo_juego, modo)
+                self.assertEqual(app.modo_ejecucion, modo_ejecucion_desde_juego(modo))
+
+                app.botones_modo = self.WidgetFalso()
+                app.modo_bloqueado_label = self.WidgetFalso()
+                app.boton_continuar = self.WidgetFalso()
+                ExpedienteMontecarlo._actualizar_estado_menu(app)
+                self.assertFalse(app.botones_modo.visible)
+                self.assertTrue(app.modo_bloqueado_label.visible)
+                self.assertIn(
+                    "MODO APUNTES" if modo == "OFICIAL" else "MODO DINÁMICO",
+                    app.modo_bloqueado_label.configuracion["text"],
+                )
+                self.assertEqual(
+                    app.boton_continuar.configuracion["text"],
+                    "Continuar Investigación (Capítulo 06)",
+                )
+
+    def test_elegir_modo_nuevo_lo_guarda_y_abre_el_archivo_de_ingreso(self):
+        class WidgetFalso:
+            def __init__(self):
+                self.visible = False
+                self.valor = ""
+
+            def set(self, valor):
+                self.valor = valor
+
+            def delete(self, *_argumentos):
+                self.valor = ""
+
+            def grid(self):
+                self.visible = True
+
+        class AplicacionFalsa:
+            def _guardar_progreso(self):
+                self.guardado = dict(self.savegame)
+
+            def _ocultar_pantallas(self):
+                pass
+
+        app = AplicacionFalsa()
+        app.savegame = crear_savegame()
+        app.completados = set()
+        app.capitulos_fallidos = set()
+        app.alias_seleccionado = WidgetFalso()
+        app.alias_personalizado = WidgetFalso()
+        app.dialogo_frame = WidgetFalso()
+
+        ExpedienteMontecarlo._nuevo_juego(app, "OFICIAL")
+
+        self.assertEqual(app.guardado["modo_juego"], "OFICIAL")
+        self.assertEqual(app.modo_ejecucion, "OFICIAL_PDF")
+        self.assertFalse(app.guardado["activo"])
+        self.assertTrue(app.dialogo_frame.visible)
+
+    def test_sin_partida_se_muestran_las_dos_opciones_de_modo(self):
+        app = type("AplicacionFalsa", (), {})()
+        app.savegame = crear_savegame()
+        app.botones_modo = self.WidgetFalso()
+        app.modo_bloqueado_label = self.WidgetFalso()
+        app.boton_continuar = self.WidgetFalso()
+
+        ExpedienteMontecarlo._actualizar_estado_menu(app)
+
+        self.assertTrue(app.botones_modo.visible)
+        self.assertFalse(app.modo_bloqueado_label.visible)
+        self.assertEqual(app.boton_continuar.configuracion["state"], "disabled")
+        codigo = inspect.getsource(ExpedienteMontecarlo._construir_interfaz)
+        self.assertIn("Nueva Investigación: Modo Apuntes (Oficial)", codigo)
+        self.assertIn(
+            "Nueva Investigación: Modo Dinámico (Semillas Aleatorias)", codigo,
+        )
+
+    def test_restablecer_elimina_el_guardado_y_desbloquea_modos(self):
+        class AplicacionFalsa:
+            def _renderizar_caso(self, reiniciar_reloj):
+                self.reinicio_sin_reloj = not reiniciar_reloj
+
+            def _actualizar_estado_menu(self):
+                ExpedienteMontecarlo._actualizar_estado_menu(self)
+
+            def _mostrar_menu(self):
+                self.menu_mostrado = True
+                self._actualizar_estado_menu()
+
+        app = AplicacionFalsa()
+        app.savegame = crear_savegame("OFICIAL", "Detective Vance")
+        app.savegame["activo"] = True
+        app.modo_ejecucion = "OFICIAL_PDF"
+        app.modo_juego = "OFICIAL"
+        app.capitulo = 4
+        app.completados = {1, 2}
+        app.capitulos_fallidos = {3}
+        app.botones_modo = self.WidgetFalso()
+        app.modo_bloqueado_label = self.WidgetFalso()
+        app.boton_continuar = self.WidgetFalso()
+
+        with tempfile.TemporaryDirectory() as directorio:
+            archivo = Path(directorio) / "savegame.json"
+            archivo.write_text('{"activo": true}', encoding="utf-8")
+            with (
+                patch("main.ARCHIVO_SAVEGAME", archivo),
+                patch("main.messagebox.askyesno", return_value=True),
+            ):
+                ExpedienteMontecarlo._restablecer_progreso(app)
+
+            self.assertFalse(archivo.exists())
+            self.assertFalse(hay_partida_guardada(app.savegame))
+            self.assertEqual(app.modo_juego, "DINAMICO")
+            self.assertTrue(app.botones_modo.visible)
+            self.assertFalse(app.modo_bloqueado_label.visible)
+            self.assertEqual(app.boton_continuar.configuracion["state"], "disabled")
+            self.assertTrue(app.menu_mostrado)
 
 
 class GeneradoresTests(unittest.TestCase):
@@ -199,15 +697,42 @@ class TransformacionesYSistemasTests(unittest.TestCase):
         cola = sistemas.simular_cola([0, 0], [0, 0], 2, 5, 1, 4)
         self.assertEqual(cola["filas"][0]["Hora llegada"], 2)
         self.assertEqual(cola["porcentaje_inactivo"], 60)
-        oficial = sistemas.simular_cola_tiempos(
-            casos_narrativa.CASOS_OFICIALES_PDF[13]["tiempos_llegada"],
-            casos_narrativa.CASOS_OFICIALES_PDF[13]["tiempos_servicio"],
+        oficial = sistemas.simular_cola_tiempos([2, 1], [1, 2])
+        self.assertEqual(len(oficial["filas"]), 2)
+
+    def test_inventario_calcula_recibos_faltantes_y_costos(self):
+        resultado = sistemas.simular_inventario(
+            [0.1, 0.2, 0.3, 0.4],
+            [100, 120, 80, 90],
+            [2, 1, 3, 1],
+            inventario_inicial=150,
         )
-        self.assertAlmostEqual(oficial["promedio_sistema"], 3.6)
-        self.assertAlmostEqual(oficial["porcentaje_inactivo"], 39.2857142857)
+        self.assertEqual(len(resultado["filas"]), 4)
+        self.assertEqual(resultado["filas"][0]["Inventario final"], 50)
+        self.assertEqual(resultado["filas"][1]["Faltante"], 70)
+        self.assertEqual(
+            resultado["costo_ordenar"], resultado["total_ordenes"] * 100,
+        )
+        self.assertEqual(
+            resultado["costo_faltante"],
+            sum(fila["Faltante"] for fila in resultado["filas"]) * 50,
+        )
 
 
 class CasosTests(unittest.TestCase):
+    def test_introducciones_indican_metodo_y_tienen_dos_parrafos_detallados(self):
+        for numero, metodo in casos_narrativa.METODOS_CAPITULO.items():
+            with self.subTest(capitulo=numero):
+                intro = casos_narrativa.crear_caso(numero, semilla=3200 + numero)[
+                    "intro_narrativa"
+                ]
+                parrafos = [parrafo for parrafo in intro.split("\n\n") if parrafo]
+                palabras = len(intro.split())
+                self.assertIn(metodo, intro)
+                self.assertEqual(len(parrafos), 2)
+                self.assertGreaterEqual(palabras, 90)
+                self.assertLessEqual(palabras, 140)
+
     def test_catorce_capitulos_generan_y_validan_campos_individuales(self):
         for numero in range(1, 15):
             with self.subTest(capitulo=numero):
@@ -232,7 +757,9 @@ class CasosTests(unittest.TestCase):
                     )
                     self.assertEqual(caso["modo_ejecucion"], modo)
                     self.assertTrue(caso["tabla"])
-                    self.assertEqual(caso["duracion"], 720 if numero == 12 else 600)
+                    self.assertEqual(
+                        caso["duracion"], casos_narrativa.calcular_tiempo_capitulo(caso),
+                    )
                     respuestas = {
                         campo["id"]: str(caso["esperado"][campo["id"]])
                         for campo in caso["campos"]
@@ -255,11 +782,26 @@ class CasosTests(unittest.TestCase):
             self.assertEqual(seccion["filas_iniciales"], 3)
             self.assertEqual(seccion["filas_paro"], filas_paro)
             self.assertEqual(seccion["max_filas"], filas_paro + 1)
-            self.assertEqual([len(fila) for fila in seccion["filas"]], [4] * (filas_paro + 1))
+            self.assertEqual([len(fila) for fila in seccion["filas"]], [5] * (filas_paro + 1))
             self.assertTrue(all("campo" in celda for fila in seccion["filas"] for celda in fila))
-        cola = casos_narrativa.crear_caso(13, 77, "OFICIAL_PDF")
-        filas_cola = cola["tabla_interactiva"]["secciones"][0]["filas"]
-        self.assertEqual(sum("campo" in celda for celda in filas_cola[-1]), 4)
+        inventario = casos_narrativa.crear_caso(13, 77, "OFICIAL_PDF")
+        filas_inventario = inventario["tabla_interactiva"]["secciones"][0]["filas"]
+        self.assertEqual(sum("campo" in celda for celda in filas_inventario[-1]), 4)
+        self.assertEqual(inventario["esperado"]["costo_ordenar"], 300)
+        self.assertEqual(inventario["esperado"]["costo_inventario"], 1915)
+        self.assertEqual(inventario["esperado"]["costo_faltante"], 2950)
+        self.assertEqual(inventario["esperado"]["costo_total"], 5165)
+        self.assertTrue(casos_narrativa.validar_respuesta(
+            inventario,
+            {
+                **{
+                    clave: str(valor)
+                    for clave, valor in inventario["esperado"].items()
+                },
+                "costo_inventario": "1918",
+                "costo_total": "5168",
+            },
+        )["correcto"])
         poisson = casos_narrativa.crear_caso(12, 77, "OFICIAL_PDF")
         self.assertTrue(poisson["tabla_interactiva"]["secciones"][0]["dinamica"])
         volados = casos_narrativa.crear_caso(14, 77, "OFICIAL_PDF")
@@ -384,16 +926,15 @@ class CasosTests(unittest.TestCase):
         )
         self.assertEqual(casos[12]["auditoria"]["tabla_completa"][-1]["x"], 15)
         self.assertAlmostEqual(casos[12]["auditoria"]["tabla_completa"][-1]["F"], 0.999931, places=6)
-        self.assertAlmostEqual(casos[13]["esperado"]["promedio"], 3.60)
-        self.assertAlmostEqual(casos[13]["esperado"]["inactividad"], 39.2857142857)
-        self.assertEqual(
-            casos[13]["auditoria"]["tiempos_llegada"],
-            [9, 2, 6, 8, 6, 9, 4, 3, 5, 5, 5, 10, 2, 2, 4, 8, 8, 3, 6, 3],
-        )
-        self.assertEqual(
-            casos[13]["auditoria"]["tiempos_servicio"],
-            [3, 2, 4, 6, 4, 4, 3, 3, 4, 4, 6, 3, 1, 4, 3, 2, 2, 3, 5, 2],
-        )
+        inventario = casos[13]
+        self.assertEqual(inventario["esperado"]["costo_ordenar"], 300)
+        self.assertEqual(inventario["esperado"]["costo_inventario"], 1915)
+        self.assertEqual(inventario["esperado"]["costo_faltante"], 2950)
+        self.assertEqual(inventario["esperado"]["costo_total"], 5165)
+        self.assertEqual(len(inventario["auditoria"]["filas"]), 12)
+        self.assertEqual(sum(
+            fila["Faltante"] for fila in inventario["auditoria"]["filas"]
+        ), 59)
         self.assertEqual(casos[14]["auditoria"]["R_suministrados"], [
             0.03991, 0.38555, 0.17546, 0.32843, 0.69572,
             0.24122, 0.61196, 0.88722, 0.65961, 0.03788,
@@ -417,6 +958,55 @@ class CasosTests(unittest.TestCase):
             self.assertEqual(informe["modo_ejecucion"], modo)
             self.assertTrue(informe["origen_problema"])
             self.assertEqual(informe["solucion"], caso["esperado"])
+
+    def test_auditoria_bloquea_respuestas_mientras_el_capitulo_sigue_abierto(self):
+        caso = casos_narrativa.crear_caso(13, 123, "OFICIAL_PDF")
+        informe = construir_documento_auditoria(caso, mostrar_solucion=False)
+        self.assertEqual(informe["solucion"], "Bloqueado hasta resolver el capítulo.")
+        self.assertEqual(informe["motor_y_resultados"], informe["solucion"])
+        self.assertEqual(informe["hipotesis"]["resultados_pruebas"], informe["solucion"])
+        self.assertEqual(informe["transitorio_vs_estable"], informe["solucion"])
+        self.assertTrue(any(
+            valor == "Por resolver"
+            for seccion in informe["tabla_reto"]
+            for fila in seccion["filas"]
+            for valor in fila
+        ))
+
+    def test_placeholders_cubren_celdas_y_resultados(self):
+        for numero in range(1, 15):
+            caso = casos_narrativa.crear_caso(numero, semilla=7000 + numero)
+            entradas = [
+                campo for campo in caso["campos"]
+                if campo["tipo"] != "selector"
+            ]
+            self.assertTrue(entradas)
+            self.assertTrue(all(
+                campo.get("placeholder_text", "").startswith("ej. ")
+                for campo in entradas
+            ))
+        caso = casos_narrativa.crear_caso(1, 77, "OFICIAL_PDF")
+        fila = caso["tabla_interactiva"]["secciones"][0]["filas"][0]
+        self.assertEqual(
+            [caso["tabla_interactiva"]["campos"][next(
+                i for i, item in enumerate(caso["tabla_interactiva"]["campos"])
+                if item["id"] == celda["campo"]
+            )]["placeholder_text"] for celda in fila],
+            ["ej. 1", "ej. 36", "ej. 1+36/100", "ej. 36", "ej. 36/100"],
+        )
+        self.assertEqual(
+            construir_respuestas_exactas(caso)["tabla_interactiva_resuelta"][0]["filas"][0][2],
+            caso["esperado"]["operacion1"],
+        )
+
+    def test_placeholder_no_se_toma_como_respuesta(self):
+        class CampoVacio:
+            placeholder_text = "ej. 0.3302"
+
+            def get(self):
+                return ""
+
+        self.assertEqual(leer_valores_entrada({"media": CampoVacio()}), {"media": ""})
 
     def test_semillas_reproducibles_y_auditorias_exportables(self):
         for numero in range(1, 15):
@@ -450,7 +1040,9 @@ class CasosTests(unittest.TestCase):
         for numero in (1, 2):
             caso = casos_narrativa.crear_caso(numero, semilla=22, modo_ejecucion="OFICIAL_PDF")
             self.assertEqual(caso["tabla"][0], [
-                "n", "Xn", "Xn+1", "# Rectangular",
+                "n", "Xn",
+                "(aXn+c) ÷ m" if numero == 1 else "aXn ÷ m",
+                "Xn+1", "# Rectangular",
             ])
             filas = caso["auditoria"]["tabla_generada"]
             for indice, fila in enumerate(filas, 1):
@@ -463,12 +1055,15 @@ class CasosTests(unittest.TestCase):
                     if campo["id"] == f"R{indice}"
                 ))
             columnas = caso["tabla_interactiva"]["secciones"][0]["columnas"]
-            self.assertEqual(columnas, ["n", "Xn", "Xn+1", "# Rectangular"])
+            self.assertEqual(len(columnas), 5)
             ids_fila_1 = {
                 celda.get("campo")
                 for celda in caso["tabla_interactiva"]["secciones"][0]["filas"][0]
             }
-            self.assertEqual(ids_fila_1, {"n1", "Xn1", "Xnext1", "R1"})
+            self.assertEqual(
+                ids_fila_1,
+                {"n1", "Xn1", "operacion1", "Xnext1", "R1"},
+            )
             entrada_correcta = {
                 clave: str(valor) for clave, valor in caso["esperado"].items()
             }
@@ -534,11 +1129,14 @@ class CasosTests(unittest.TestCase):
         self.assertTrue(casos_narrativa.validar_respuesta(
             probabilidad, {"probabilidad": str(p)},
         )["correcto"])
-        cola = casos_narrativa.crear_caso(13, semilla=313)
-        inactividad = cola["esperado"]["inactividad"]
+        inventario = casos_narrativa.crear_caso(13, semilla=313)
         self.assertTrue(casos_narrativa.validar_respuesta(
-            cola, {"promedio": str(cola["esperado"]["promedio"]),
-                   "inactividad": str(inactividad / 100)},
+            inventario, {
+                "costo_ordenar": str(inventario["esperado"]["costo_ordenar"]),
+                "costo_inventario": str(inventario["esperado"]["costo_inventario"]),
+                "costo_faltante": str(inventario["esperado"]["costo_faltante"]),
+                "costo_total": str(inventario["esperado"]["costo_total"]),
+            },
         )["correcto"])
 
     def test_decimal_con_coma(self):

@@ -1,4 +1,4 @@
-"""Transformada inversa y distribuciones no uniformes."""
+"""Transformaciones de números uniformes a otras distribuciones."""
 
 from __future__ import annotations
 

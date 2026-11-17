@@ -1,4 +1,4 @@
-"""Pruebas estadísticas para secuencias de números rectangulares."""
+"""Pruebas estadísticas aplicadas a secuencias de números rectangulares."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ def prueba_ks(valores: list[float], alpha: float = 0.05) -> dict:
 def agrupar_frecuencias(
     observadas: list[int], esperadas: list[float], etiquetas: list[str] | None = None
 ) -> list[dict]:
-    """Agrupa categorías contiguas para que toda FE agrupada sea >= 5."""
+    """Agrupa categorías contiguas hasta que cada frecuencia esperada llegue a 5."""
     if len(observadas) != len(esperadas) or not observadas:
         raise ValueError("Las listas de frecuencias deben tener igual tamaño no nulo.")
     if any(fe < 0 for fe in esperadas):
@@ -89,7 +89,7 @@ def agrupar_categorias(
     observadas: list[int], esperadas: list[float], etiquetas: list[str] | None = None,
     minimo_esperado: float = 5,
 ) -> list[dict]:
-    """Agrupa categorías contiguas desde la izquierda y consolida la cola."""
+    """Agrupa categorías desde la izquierda y suma al final cualquier resto."""
     if minimo_esperado <= 0:
         raise ValueError("El mínimo de frecuencia esperada debe ser positivo.")
     if not esperadas or len(observadas) != len(esperadas):
@@ -161,7 +161,7 @@ def prueba_frecuencias(
 
 
 def prueba_poker(valores: list[float], decimales: int = 3) -> dict:
-    """Evalúa patrones de tres o cinco dígitos decimales."""
+    """Cuenta patrones de Póker usando tres o cinco decimales."""
     _validar_muestra(valores)
     if decimales not in (3, 5):
         raise ValueError("La prueba de Póker admite tres o cinco decimales.")
@@ -222,7 +222,7 @@ def prueba_poker(valores: list[float], decimales: int = 3) -> dict:
 def prueba_distancias_decimales(
     valores: list[float], minimo_esperado: float = 5
 ) -> dict:
-    """Clasifica el primer dígito repetido dentro de cada R de cinco decimales."""
+    """Cuenta cuántos dígitos pasan antes de la primera repetición de cada R."""
     _validar_muestra(valores)
     if any(not 0 <= valor < 1 for valor in valores):
         raise ValueError("Cada R debe estar en el intervalo [0, 1).")
@@ -264,7 +264,7 @@ def prueba_distancias_decimales(
 def prueba_distancias(
     digitos: list[int], minimo_esperado: float = 5
 ) -> dict:
-    """Prueba chi-cuadrado para huecos entre repeticiones de cada dígito."""
+    """Contrasta con chi-cuadrado los huecos entre dígitos repetidos."""
     if len(digitos) < 2 or any(digito not in range(10) for digito in digitos):
         raise ValueError("Se requieren al menos dos dígitos en [0, 9].")
     ultima_posicion: dict[int, int] = {}
@@ -326,7 +326,7 @@ def prueba_series(
 
 
 def prueba_corridas(valores: list[float], alpha: float = 0.05) -> dict:
-    """Prueba de independencia por corridas ascendentes y descendentes."""
+    """Evalúa la independencia a partir de las corridas ascendentes y descendentes."""
     _validar_muestra(valores)
     signos = [
         1 if siguiente > anterior else -1
@@ -362,7 +362,7 @@ def auditar_flujo(valores: list[float]) -> dict:
 
 
 def flujo_aceptado(resultados: list[dict]) -> int | None:
-    """Retorna índice base cero del primer flujo que pasa las tres pruebas."""
+    """Devuelve el índice del primer flujo que supera las cinco pruebas."""
     for i, resultado in enumerate(resultados):
         if all(resultado[nombre]["acepta"]
                for nombre in ("promedios", "ks", "frecuencias", "poker", "corridas")):

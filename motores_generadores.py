@@ -1,4 +1,4 @@
-"""Generadores congruenciales y utilidades de periodo."""
+"""Generadores congruenciales y comprobaciones de periodo."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from math import gcd, isqrt
 
 
 def factores_primos(n: int) -> set[int]:
-    """Devuelve los factores primos distintos de un entero positivo."""
+    """Obtiene los factores primos distintos de n."""
     factores: set[int] = set()
     divisor = 2
     while divisor <= isqrt(n):
@@ -21,7 +21,7 @@ def factores_primos(n: int) -> set[int]:
 
 
 def periodo_completo_mixto(a: int, c: int, m: int) -> bool:
-    """Comprueba las condiciones de Hull-Dobell para periodo m."""
+    """Verifica las condiciones de Hull-Dobell."""
     if m <= 0 or gcd(c, m) != 1:
         return False
     if any((a - 1) % p != 0 for p in factores_primos(m)):
@@ -30,7 +30,7 @@ def periodo_completo_mixto(a: int, c: int, m: int) -> bool:
 
 
 def periodo_completo_multiplicativo(a: int, m: int) -> bool:
-    """Comprueba periodo completo para el caso común m=2**k."""
+    """Comprueba el periodo máximo para módulos que son potencias de dos."""
     if m < 2 or a % m == 0:
         return False
     if m & (m - 1) == 0:
@@ -45,14 +45,14 @@ def periodo_completo_multiplicativo(a: int, m: int) -> bool:
 def periodo_observado_mixto(
     semilla: int, a: int, c: int, m: int
 ) -> int | None:
-    """Devuelve el primer retorno a la semilla o None si esta es transitoria."""
+    """Mide cuándo vuelve a la semilla; devuelve None si entra en otro ciclo."""
     return _periodo_observado(semilla, m, lambda x: (a * x + c) % m)
 
 
 def periodo_observado_multiplicativo(
     semilla: int, a: int, m: int
 ) -> int | None:
-    """Devuelve el primer retorno a la semilla o None si esta es transitoria."""
+    """Mide cuándo vuelve a la semilla; devuelve None si entra en otro ciclo."""
     return _periodo_observado(semilla, m, lambda x: (a * x) % m)
 
 
@@ -74,7 +74,7 @@ def _periodo_observado(
 def congruencial_mixto(
     semilla: int, a: int, c: int, m: int, cantidad: int
 ) -> list[dict[str, int | str]]:
-    """Genera Xn y Rn=Xn/m para un congruencial mixto."""
+    """Calcula las iteraciones y guarda cada número rectangular como X/m."""
     _validar_parametros(semilla, a, m, cantidad)
     if c < 0:
         raise ValueError("La constante c debe ser no negativa.")
@@ -93,7 +93,7 @@ def congruencial_mixto(
 def congruencial_multiplicativo(
     semilla: int, a: int, m: int, cantidad: int, normalizacion: str = "m"
 ) -> list[dict[str, int | str]]:
-    """Genera un congruencial multiplicativo; normaliza por m o m-1."""
+    """Calcula las iteraciones y normaliza cada valor con m o m-1."""
     _validar_parametros(semilla, a, m, cantidad)
     if normalizacion not in {"m", "m-1"}:
         raise ValueError("La normalización debe ser 'm' o 'm-1'.")
@@ -115,7 +115,7 @@ def congruencial_multiplicativo(
 def congruencial_mixto_hasta_paro(
     semilla: int, a: int, c: int, m: int, maximo: int = 64
 ) -> list[dict[str, int | str]]:
-    """Genera iteraciones hasta repetir X0 o alcanzar una repetición consecutiva."""
+    """Avanza hasta volver a la semilla, repetir el valor o alcanzar el límite."""
     _validar_parametros(semilla, a, m, maximo)
     if c < 0:
         raise ValueError("La constante c debe ser no negativa.")
@@ -136,7 +136,7 @@ def congruencial_mixto_hasta_paro(
 def congruencial_multiplicativo_hasta_paro(
     semilla: int, a: int, m: int, maximo: int | None = None
 ) -> list[dict[str, int | str]]:
-    """Genera iteraciones hasta regresar a X0 o alcanzar el límite indicado."""
+    """Avanza hasta volver a la semilla o alcanzar el límite indicado."""
     _validar_parametros(semilla, a, m, maximo if maximo is not None else m)
     cantidad_maxima = maximo if maximo is not None else m
     if cantidad_maxima < 1:

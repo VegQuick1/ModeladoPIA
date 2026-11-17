@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "alias": "Detective Vance",
+  "modo": "DINAMICO",
+  "modo_juego": "DINAMICO",
+  "capitulo": 4,
+  "capitulo_actual": 4,
+  "estrellas": [
+    1,
+    2,
+    3
+  ],
+  "fallidos": [],
+  "activo": true,
+  "viaje_tiempo": false,
+  "pendientes_rehacer": [],
+  "resultado_actual": ""
+}
