@@ -45,3 +45,24 @@ otro modo.
 
 El progreso se guarda en `savegame.json`. Ejecuta la suite desde la raíz del
 proyecto con `pytest`.
+
+## Ejecutable para macOS
+
+El ejecutable de Windows no puede ejecutarse directamente en macOS. PyInstaller
+tampoco puede cruzar sistemas desde Windows: el paquete `.app` debe construirse
+en una máquina macOS.
+
+El flujo de GitHub Actions incluido crea automáticamente
+`Expediente-Montecarlo-macOS.zip` en una ejecución de macOS. Actívalo desde
+**Actions > Build macOS app > Run workflow** y descarga el archivo desde
+**Artifacts**. Los archivos de Windows no se modifican ni se sobrescriben.
+
+Para crear la aplicación localmente desde macOS:
+
+```bash
+python3 -m venv .venv-macos
+source .venv-macos/bin/activate
+python -m pip install -r requirements.txt -r requirements-build.txt
+pyinstaller --clean --noconfirm ExpedienteMontecarlo.spec
+codesign --force --deep --sign - "dist/Expediente Montecarlo.app"
+```

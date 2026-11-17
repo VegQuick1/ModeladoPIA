@@ -109,6 +109,17 @@ def verificar_entorno_ejecucion() -> None:
         if getattr(sys, "frozen", False)
         else Path(__file__).resolve().parent
     )
+    if getattr(sys, "frozen", False) and sys.platform == "darwin":
+        carpeta_aplicacion = (
+            Path.home() / "Library" / "Application Support" / "ExpedienteMontecarlo"
+        )
+        try:
+            carpeta_aplicacion.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            errores.append(
+                f"No se pudo crear la carpeta de datos de macOS: {error}"
+            )
+
     ARCHIVO_SAVEGAME = carpeta_aplicacion / "savegame.json"
     guardado_escribible = _probar_escritura(carpeta_aplicacion)
     if ARCHIVO_SAVEGAME.exists():
@@ -120,12 +131,20 @@ def verificar_entorno_ejecucion() -> None:
 
     if not guardado_escribible:
         ruta_guardado_anterior = ARCHIVO_SAVEGAME
-        local_appdata = Path(
-            os.environ.get(
-                "LOCALAPPDATA",
-                str(Path.home() / "AppData" / "Local"),
-            ),
-        ) / "ExpedienteMontecarlo"
+        if sys.platform == "darwin":
+            local_appdata = (
+                Path.home()
+                / "Library"
+                / "Application Support"
+                / "ExpedienteMontecarlo"
+            )
+        else:
+            local_appdata = Path(
+                os.environ.get(
+                    "LOCALAPPDATA",
+                    str(Path.home() / "AppData" / "Local"),
+                ),
+            ) / "ExpedienteMontecarlo"
         try:
             local_appdata.mkdir(parents=True, exist_ok=True)
         except OSError as error:

@@ -1,0 +1,47 @@
+name: Build macOS app
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos:
+    runs-on: macos-13
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-build.txt
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Build macOS application
+        run: |
+          pyinstaller --clean --noconfirm ExpedienteMontecarlo.spec
+          codesign --force --deep --sign - "dist/Expediente Montecarlo.app"
+          cd dist
+          zip -r "Expediente-Montecarlo-macOS.zip" "Expediente Montecarlo.app"
+
+      - name: Upload macOS application
+        uses: actions/upload-artifact@v4
+        with:
+          name: Expediente-Montecarlo-macOS
+          path: dist/Expediente-Montecarlo-macOS.zip
+          if-no-files-found: error
