@@ -973,7 +973,7 @@ class CasosTests(unittest.TestCase):
             for valor in fila
         ))
 
-    def test_placeholders_cubren_celdas_y_resultados(self):
+    def test_placeholders_no_muestran_ejemplos(self):
         for numero in range(1, 15):
             caso = casos_narrativa.crear_caso(numero, semilla=7000 + numero)
             entradas = [
@@ -982,18 +982,18 @@ class CasosTests(unittest.TestCase):
             ]
             self.assertTrue(entradas)
             self.assertTrue(all(
-                campo.get("placeholder_text", "").startswith("ej. ")
+                not campo.get("placeholder_text", "").lower().startswith("ej.")
                 for campo in entradas
             ))
         caso = casos_narrativa.crear_caso(1, 77, "OFICIAL_PDF")
         fila = caso["tabla_interactiva"]["secciones"][0]["filas"][0]
-        self.assertEqual(
-            [caso["tabla_interactiva"]["campos"][next(
+        self.assertTrue(all(
+            not caso["tabla_interactiva"]["campos"][next(
                 i for i, item in enumerate(caso["tabla_interactiva"]["campos"])
                 if item["id"] == celda["campo"]
-            )]["placeholder_text"] for celda in fila],
-            ["ej. 1", "ej. 36", "ej. 1+36/100", "ej. 36", "ej. 36/100"],
-        )
+            )]["placeholder_text"].lower().startswith("ej.")
+            for celda in fila
+        ))
         self.assertEqual(
             construir_respuestas_exactas(caso)["tabla_interactiva_resuelta"][0]["filas"][0][2],
             caso["esperado"]["operacion1"],
@@ -1001,7 +1001,7 @@ class CasosTests(unittest.TestCase):
 
     def test_placeholder_no_se_toma_como_respuesta(self):
         class CampoVacio:
-            placeholder_text = "ej. 0.3302"
+            placeholder_text = ""
 
             def get(self):
                 return ""
@@ -1041,7 +1041,7 @@ class CasosTests(unittest.TestCase):
             caso = casos_narrativa.crear_caso(numero, semilla=22, modo_ejecucion="OFICIAL_PDF")
             self.assertEqual(caso["tabla"][0], [
                 "n", "Xn",
-                "(aXn+c) ÷ m" if numero == 1 else "aXn ÷ m",
+                "(aXn+C) ÷ m" if numero == 1 else "aXn ÷ m",
                 "Xn+1", "# Rectangular",
             ])
             filas = caso["auditoria"]["tabla_generada"]
@@ -1050,7 +1050,7 @@ class CasosTests(unittest.TestCase):
                     fila["R"], f'{fila["Xnext"]}/{caso["auditoria"]["parametros"]["m"]}',
                 )
                 self.assertEqual(caso["esperado"][f"R{indice}"], fila["R"])
-                self.assertIn("ej. 27/64", next(
+                self.assertNotIn("ej.", next(
                     campo["etiqueta"] for campo in caso["campos"]
                     if campo["id"] == f"R{indice}"
                 ))

@@ -329,7 +329,7 @@ def _caso_generador(
         )
         parametros = {"X0": x0, "a": a, "c": c, "m": m}
         caso["narrativa"] = (
-            f"Calcula Xₙ₊₁=(aXₙ+c) mod m con X₀={x0}, a={a}, c={c}, m={m}. "
+            f"Calcula Xₙ₊₁=(aXₙ+C) mod m con X₀={x0}, a={a}, c={c}, m={m}. "
             "Detén la tabla al regresar a X₀ o al repetirse Xₙ₊₁=Xₙ."
         )
         caso["auditoria"] = {
@@ -400,7 +400,7 @@ def _caso_generador(
     caso["tabla"] = [
         [
             "n", "Xn",
-            "(aXn+c) ÷ m" if numero == 1 else "aXn ÷ m",
+            "(aXn+C) ÷ m" if numero == 1 else "aXn ÷ m",
             "Xn+1", "# Rectangular",
         ],
         *[
@@ -531,7 +531,7 @@ def _caso_distancias(caso: dict, rng: random.Random, oficial: dict | None = None
              "0-2" if indice < 3 else "≥3"]
             for indice in range(4)
         ] + [
-            [f"Grupo {grupo['categoria']}", grupo["FO"], round(grupo["FE"], 3), ""]
+            [grupo["categoria"], grupo["FO"], round(grupo["FE"], 3), ""]
             for grupo in resultado["grupos"]
         ]
     else:
@@ -982,7 +982,7 @@ def _caso_volados(caso: dict, rng: random.Random, oficial: dict | None = None) -
     caso["coordenadas"] = f"N {latitud:.4f}°, O {longitud:.4f}°"
     caso["auditoria"] = {
         "capital": capital, "apuesta_inicial": apuesta_inicial, "meta": meta,
-        "corridas_R": corridas_r, "R_suministrados": oficial["valores_R"] if oficial else corridas_r[0],
+        "corridas_r": corridas_r, "R_suministrados": oficial["valores_R"] if oficial else corridas_r[0],
         "tiradas_utilizadas_por_corrida": [
             len(corrida["jugadas"]) for corrida in resultado["corridas"]
         ],
@@ -1134,71 +1134,7 @@ def _campo(
 
 
 def _placeholder_ejemplo(numero: int, identificador: str) -> str:
-    if numero in (1, 2):
-        if identificador.startswith("operacion"):
-            return "ej. 1+36/100"
-        if identificador.startswith(("Xn", "Xnext")):
-            return "ej. 36"
-        if identificador.startswith("R"):
-            return "ej. 36/100"
-        return "ej. 1"
-    if numero == 3:
-        return {
-            "media": "ej. 0.3302", "z0": "ej. 1.8604",
-            "zcrit": "ej. 1.96",
-        }.get(identificador, "ej. 0.3302")
-    if numero == 4:
-        return "ej. 0.409" if identificador == "critico_tabla" else "ej. 0.3177"
-    if numero == 5:
-        if identificador.startswith("FO"):
-            return "ej. 4"
-        return "ej. 4.40" if identificador == "chi0" else "ej. 7.81"
-    if numero == 6:
-        if identificador.startswith("FO"):
-            return "ej. 4"
-        if identificador.startswith("FE"):
-            return "ej. 2.71"
-        return "ej. 20.0265" if identificador == "chi0" else "ej. 3.84"
-    if numero == 7:
-        if identificador.startswith("FO"):
-            return "ej. 5"
-        if identificador == "FE_pareja":
-            return "ej. 2.25"
-        return "ej. 5.6667" if identificador == "chi0" else "ej. 7.81"
-    if numero == 8:
-        if identificador.startswith("FO"):
-            return "ej. 6"
-        if identificador.startswith("FEp"):
-            return "ej. 5.0400"
-        return "ej. 0.3529" if identificador == "chi0" else "ej. 3.84"
-    if numero == 9:
-        return "ej. 0.0872" if identificador.startswith("T") else (
-            "ej. 1.0375" if identificador == "total" else "ej. 0.2594"
-        )
-    if numero in (10, 11):
-        return "ej. 3.5394" if numero == 10 else "ej. 1.5394"
-    if numero == 12:
-        if identificador.startswith("pois_f"):
-            return "ej. 0.1755"
-        if identificador.startswith("pois_F"):
-            return "ej. 0.4405"
-        return "ej. 7"
-    if numero == 13:
-        if identificador.endswith("_orden"):
-            return "ej. 1"
-        return {
-            "costo_ordenar": "ej. 300",
-            "costo_inventario": "ej. 1915",
-            "costo_faltante": "ej. 2950",
-            "costo_total": "ej. 5168",
-        }.get(identificador, "ej. 150")
-    if identificador.startswith("probabilidad"):
-        return "ej. 0.50"
-    if identificador.startswith("apuesta"):
-        return "ej. 10"
-    if identificador.startswith(("antes", "despues")):
-        return "ej. 30"
-    return "ej. 10"
+    return ""
 
 
 def _configurar_tabla_interactiva(caso: dict) -> None:
@@ -1266,6 +1202,7 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
             "visual": visual,
         })
 
+   
     if numero in (1, 2):
         datos = caso["auditoria"]["tabla_interactiva"]
         parar_en = caso["auditoria"]["iteraciones_hasta_paro"]
@@ -1276,20 +1213,20 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
                 celda_editable(f"Xn{indice}", f"Xn fila {indice}", fila["Xn"], "entero"),
                 celda_editable(
                     f"operacion{indice}",
-                    "(aXₙ+c) ÷ m" if numero == 1 else "aXₙ ÷ m",
+                    "(aXₙ+C) ÷ m" if numero == 1 else "aXₙ ÷ m",
                     fila["operacion"], "operacion",
                 ),
                 celda_editable(f"Xnext{indice}", f"Xn+1 fila {indice}", fila["Xnext"], "entero"),
                 celda_editable(
-                    f"R{indice}", f"R{indice} (ej. 27/64)", fila["R"],
-                    "fracción (ej. 27/64)",
+                    f"R{indice}", f"R{indice}", fila["R"],
+                    "fracción",
                 ),
             ])
         agregar_seccion(
             "iteraciones", "Iteraciones del generador",
             [
                 "n", "Xn",
-                "(aXₙ+c) ÷ m" if numero == 1 else "aXₙ ÷ m",
+                "(aXn+C) ÷ m" if numero == 1 else "aXn ÷ m",
                 "Xn+1", "# Rectangular",
             ],
             filas, dinamica=True, iniciales=min(3, parar_en), paro=parar_en,
