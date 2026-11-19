@@ -289,14 +289,15 @@ def _crear_tablero_clasificacion(caso: dict) -> dict:
             for indice, valor in enumerate(valores, 1)
         ]
     elif numero == 7:
-        categorias = ["Inf-Izq", "Sup-Izq", "Inf-Der", "Sup-Der"]
+        categorias = ["Sup-Izq", "Sup-Der", "Inf-Izq", "Inf-Der"]
         clasificaciones = []
         for indice in range(len(valores) - 1):
-            fila = min(int(valores[indice] * 2), 1)
-            columna = min(int(valores[indice + 1] * 2), 1)
-            clasificaciones.append(
-                categorias[(fila * 2) + columna]
-            )
+            x = valores[indice]
+            y = valores[indice + 1]
+            if x < 0.5:
+                clasificaciones.append("Sup-Izq" if y >= 0.5 else "Inf-Izq")
+            else:
+                clasificaciones.append("Sup-Der" if y >= 0.5 else "Inf-Der")
         fichas = [
             {
                 "id": f"R{indice + 1}-R{indice + 2}",
@@ -320,10 +321,25 @@ def _crear_tablero_clasificacion(caso: dict) -> dict:
         ]
     return {
         "titulo": "Tablero de clasificación por arrastre",
+        "instruccion": (
+            "Cada pareja (Rᵢ, Rᵢ₊₁) es un punto (X, Y): el 1er número es X y el 2do es Y. "
+            "Ubícala según 1/2 = 0.5: X < 0.5 Izq / X ≥ 0.5 Der; Y < 0.5 Inf / Y ≥ 0.5 Sup."
+            if numero == 7 else
+            "Arrastra una ficha a una categoría o selecciónala y pulsa su zona."
+        ),
         "categorias": categorias,
+        "etiquetas_zonas": (
+            {
+                "Sup-Izq": "Sup-Izq (X < 0.5, Y ≥ 0.5)",
+                "Sup-Der": "Sup-Der (X ≥ 0.5, Y ≥ 0.5)",
+                "Inf-Izq": "Inf-Izq (X < 0.5, Y < 0.5)",
+                "Inf-Der": "Inf-Der (X ≥ 0.5, Y < 0.5)",
+            }
+            if numero == 7 else {}
+        ),
         "fichas": fichas,
-        "columnas_zonas": 5 if numero == 6 else 4,
-        "columnas_fichas": 2 if numero == 7 else 4 if numero == 6 else 5,
+        "columnas_zonas": 2 if numero == 7 else 5 if numero == 6 else 4,
+        "columnas_fichas": 3 if numero == 7 else 2,
     }
 
 
@@ -686,12 +702,17 @@ def _caso_series(caso: dict, rng: random.Random, oficial: dict | None = None) ->
         for i in range(divisiones) for j in range(divisiones)
     ]
     caso["narrativa"] = (
-        f"Forma {resultado['n_parejas']} parejas consecutivas y distribúyelas en "
-        f"2×2 celdas. gl=3, α=0.05, χ² crítico={resultado['critico']:.3f}."
+        f"Forma {resultado['n_parejas']} parejas consecutivas (Rᵢ, Rᵢ₊₁) = (X, Y), "
+        "donde el primer número es X y el segundo es Y. Clasifícalas en el cuadrado "
+        "de 4 cuadrantes comparando cada coordenada contra 1/2 = 0.5 "
+        "(X < 0.5 Izq, X ≥ 0.5 Der; Y < 0.5 Inf, Y ≥ 0.5 Sup). "
+        f"gl=3, α=0.05, χ² crítico={resultado['critico']:.3f}."
     )
     caso["tabla"] = tabla
-    caso["formato"] = "Calcula χ₀² y selecciona el veredicto de independencia H₀."
+    caso["formato"] = "Clasifica las parejas (X, Y) en los 4 cuadrantes, calcula χ₀² y selecciona H₀."
     caso["formula"] = (
+        "Pareja (Rᵢ, Rᵢ₊₁) = (X, Y)\n"
+        "Umbral: 1/2 = 0.5 (Izq/Der en X; Inf/Sup en Y)\n"
         "FEᵢⱼ = (N−1)/4\n"
         "χ₀² = Σ (FOᵢⱼ−FEᵢⱼ)²/FEᵢⱼ\n"
         "gl = 3"

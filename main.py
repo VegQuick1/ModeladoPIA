@@ -420,6 +420,7 @@ class TableroClasificacion(ctk.CTkFrame):
     def __init__(self, master: ctk.CTkBaseClass, configuracion: dict) -> None:
         super().__init__(master, fg_color=COLOR_CARPETA, corner_radius=8)
         self.configuracion = configuracion
+        self.etiquetas_zonas: dict[str, str] = configuracion.get("etiquetas_zonas", {})
         self.fichas_config = {
             ficha["id"]: ficha for ficha in configuracion["fichas"]
         }
@@ -437,8 +438,13 @@ class TableroClasificacion(ctk.CTkFrame):
             text_color=COLOR_AMBAR, font=ctk.CTkFont(size=16, weight="bold"),
         ).grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 2))
         ctk.CTkLabel(
-            self, text="Arrastra una ficha a una categoría o selecciónala y pulsa su zona.",
-            anchor="w", text_color=COLOR_TINTA, font=ctk.CTkFont(size=12),
+            self,
+            text=configuracion.get(
+                "instruccion",
+                "Arrastra una ficha a una categoría o selecciónala y pulsa su zona.",
+            ),
+            anchor="w", justify="left", wraplength=920,
+            text_color=COLOR_TINTA, font=ctk.CTkFont(size=12),
         ).grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 5))
 
         self.zonas_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -448,7 +454,7 @@ class TableroClasificacion(ctk.CTkFrame):
         columnas_zonas = configuracion.get(
             "columnas_zonas", min(4, max(1, len(configuracion["categorias"]))),
         )
-        columnas_fichas = configuracion.get("columnas_fichas", 5)
+        columnas_fichas = configuracion.get("columnas_fichas", 2)
         for columna in range(columnas_zonas):
             self.zonas_frame.grid_columnconfigure(columna, weight=1, uniform="zonas")
         for indice, categoria in enumerate(configuracion["categorias"]):
@@ -462,16 +468,17 @@ class TableroClasificacion(ctk.CTkFrame):
                 row=indice // columnas_zonas, column=indice % columnas_zonas,
                 sticky="nsew", padx=3, pady=3,
             )
+            etiqueta_visible = self.etiquetas_zonas.get(categoria, categoria)
             cabecera = ctk.CTkButton(
-                zona, text=f"{categoria} · 0 asignadas", anchor="w",
+                zona, text=f"{etiqueta_visible} · 0 asignadas", anchor="w",
                 fg_color="transparent", hover_color=COLOR_SUPERFICIE,
-                text_color=COLOR_TINTA, font=ctk.CTkFont(size=11, weight="bold"),
-                height=24,
+                text_color=COLOR_TINTA, font=ctk.CTkFont(size=12, weight="bold"),
+                height=26,
                 command=lambda nombre=categoria: self._asignar_seleccionada(nombre),
             )
-            cabecera.pack(fill="x", padx=2, pady=(2, 0))
+            cabecera.pack(fill="x", padx=3, pady=(2, 0))
             contenedor = ctk.CTkFrame(zona, fg_color="transparent")
-            contenedor.pack(fill="both", expand=True, padx=2, pady=(0, 2))
+            contenedor.pack(fill="both", expand=True, padx=3, pady=(0, 3))
             for columna in range(columnas_fichas):
                 contenedor.grid_columnconfigure(columna, weight=1, uniform="fichas_asignadas")
             self.zonas[categoria] = {
@@ -524,7 +531,7 @@ class TableroClasificacion(ctk.CTkFrame):
             self._fantasma = ctk.CTkLabel(
                 self, text=texto, fg_color=COLOR_LATON,
                 text_color=COLOR_TINTA, corner_radius=5,
-                font=ctk.CTkFont(size=12),
+                font=ctk.CTkFont(size=12, weight="bold"),
             )
         if self._fantasma is not None:
             self._fantasma.place(
@@ -572,13 +579,14 @@ class TableroClasificacion(ctk.CTkFrame):
             boton_anterior.destroy()
             self._reorganizar_fichas(anterior)
         self.botones_ficha[identificador].grid_remove()
+        es_pareja = ", " in self.fichas_config[identificador]["texto"]
         boton_zona = ctk.CTkButton(
             self.zonas[categoria]["contenedor"],
             text=self.fichas_config[identificador]["texto"],
-            width=100 if ", " in self.fichas_config[identificador]["texto"] else 42,
-            height=16, fg_color=COLOR_NOTA, hover_color=COLOR_SUPERFICIE,
+            width=155 if es_pareja else 92,
+            height=28, fg_color=COLOR_NOTA, hover_color=COLOR_SUPERFICIE,
             text_color=COLOR_TINTA, border_width=1, border_color=COLOR_LATON,
-            font=ctk.CTkFont(size=9),
+            font=ctk.CTkFont(size=12, weight="bold"),
         )
         self.fichas_por_categoria[categoria][identificador] = boton_zona
         self._vincular_arrastre(boton_zona, identificador)
@@ -602,11 +610,15 @@ class TableroClasificacion(ctk.CTkFrame):
     def _reorganizar_fichas(self, categoria: str) -> None:
         zona = self.zonas[categoria]
         columnas = zona["columnas_fichas"]
-        for indice, boton in enumerate(self.fichas_por_categoria[categoria].values()):
+        fichas = list(self.fichas_por_categoria[categoria].values())
+        for indice, boton in enumerate(fichas):
             boton.grid(
                 row=indice // columnas, column=indice % columnas,
-                sticky="ew", padx=1, pady=0,
+                sticky="ew", padx=2, pady=2,
             )
+        if "frame" in zona:
+            filas = (len(fichas) + columnas - 1) // columnas if fichas else 0
+            zona["frame"].configure(height=max(92, 34 + filas * 32))
 
     def completar(self) -> None:
         for identificador, ficha in self.fichas_config.items():
@@ -624,10 +636,12 @@ class TableroClasificacion(ctk.CTkFrame):
         return {"pendientes": pendientes, "incorrectas": incorrectas}
 
     def _actualizar_zonas(self) -> None:
+        etiquetas = getattr(self, "etiquetas_zonas", {})
         for categoria, zona in self.zonas.items():
             asignadas = self.fichas_por_categoria[categoria]
+            etiqueta_visible = etiquetas.get(categoria, categoria)
             zona["cabecera"].configure(
-                text=f"{categoria} · {len(asignadas)} asignadas",
+                text=f"{etiqueta_visible} · {len(asignadas)} asignadas",
             )
 
     def _actualizar_estilo_fichas(self) -> None:
@@ -760,8 +774,10 @@ class TablaInteractiva(ctk.CTkFrame):
                 cuerpo.grid_columnconfigure(columna, weight=1, uniform=seccion["id"])
             if seccion.get("visual") == "cuadrantes":
                 posiciones = [
-                    ("Sup-Izq", 1, 0, 0), ("Sup-Der", 3, 0, 1),
-                    ("Inf-Izq", 0, 1, 0), ("Inf-Der", 2, 1, 1),
+                    ("Sup-Izq (X < 0.5, Y ≥ 0.5)", 1, 0, 0),
+                    ("Sup-Der (X ≥ 0.5, Y ≥ 0.5)", 3, 0, 1),
+                    ("Inf-Izq (X < 0.5, Y < 0.5)", 0, 1, 0),
+                    ("Inf-Der (X ≥ 0.5, Y < 0.5)", 2, 1, 1),
                 ]
                 por_indice = seccion["filas"]
                 for etiqueta, indice, fila, columna in posiciones:

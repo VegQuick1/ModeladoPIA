@@ -1231,16 +1231,23 @@ class CasosTests(unittest.TestCase):
                 self.assertTrue(tablero["categorias"])
                 self.assertTrue(tablero["fichas"])
                 self.assertEqual(
-                    tablero["columnas_zonas"], 5 if numero == 6 else 4,
+                    tablero["columnas_zonas"],
+                    2 if numero == 7 else 5 if numero == 6 else 4,
                 )
                 self.assertEqual(
                     tablero["columnas_fichas"],
-                    2 if numero == 7 else 4 if numero == 6 else 5,
+                    3 if numero == 7 else 2,
                 )
                 self.assertTrue(all(
                     ficha["categoria_correcta"] in tablero["categorias"]
                     for ficha in tablero["fichas"]
                 ))
+            self.assertEqual(
+                casos[7]["tablero_clasificacion"]["categorias"],
+                ["Sup-Izq", "Sup-Der", "Inf-Izq", "Inf-Der"],
+            )
+            self.assertIn("1/2 = 0.5", casos[7]["narrativa"])
+            self.assertIn("(X, Y)", casos[7]["narrativa"])
             self.assertEqual(
                 casos[6]["tablero_clasificacion"]["categorias"],
                 [
