@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 ARCHIVO_SAVEGAME = Path(__file__).resolve().with_name("savegame.json")
-HABILITAR_ATAJO_REVISION = False
+HABILITAR_ATAJO_REVISION = True
 
 
 def _mostrar_alerta_entorno(mensaje: str) -> None:
