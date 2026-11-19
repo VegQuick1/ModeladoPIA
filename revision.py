@@ -64,7 +64,7 @@ def construir_respuestas_exactas(caso: dict) -> dict:
         "tablas_criticas": {
             "Z_alpha_0.05": 1.96,
             "Kolmogorov_Smirnov_alpha_0.05": estadisticas.KS_CRITICOS_005,
-            "Chi_cuadrado_alpha_0.05": estadisticas.CHI_CUADRADO_CRITICOS_005,
+            "χ²_alpha_0.05": estadisticas.CHI_CUADRADO_CRITICOS_005,
         },
         "tabla_interactiva_resuelta": filas_tabla,
     }
@@ -112,7 +112,10 @@ def _contar_muestra(caso: dict) -> int | None:
     for clave in ("tamano_muestra", "n_digitos", "n_parejas", "n_huecos"):
         if clave in auditoria:
             return auditoria[clave]
-    for clave in ("valores_R", "digitos", "tabla_generada", "corridas_R", "filas"):
+    for clave in (
+        "valores_R", "digitos", "tabla_generada", "tabla_completa",
+        "corridas_R", "filas",
+    ):
         if clave in auditoria:
             valor = auditoria[clave]
             return sum(map(len, valor)) if clave == "corridas_R" else len(valor)
@@ -328,11 +331,19 @@ def _completar_respuestas(self) -> None:
     self.tabla._renderizar()
     for clave, entrada in self.entradas.items():
         valor = str(self.caso["esperado"][clave])
-        if isinstance(entrada, ctk.CTkComboBox):
+        if isinstance(entrada, (ctk.CTkComboBox, ctk.CTkOptionMenu)):
             entrada.set(valor)
         else:
             entrada.delete(0, "end")
             entrada.insert(0, valor)
+    if any(
+        seccion["id"] == "volados"
+        for seccion in self.caso["tabla_interactiva"]["secciones"]
+    ):
+        self.tabla.recalcular_corridas_volados()
+    tablero = getattr(self, "tablero_clasificacion", None)
+    if tablero is not None:
+        tablero.completar()
 
 
 def _exportar(self, formato: str) -> None:

@@ -14,6 +14,15 @@ KS_CRITICOS_005 = {
     1: 0.975, 2: 0.842, 3: 0.708, 4: 0.624, 5: 0.565,
     6: 0.521, 7: 0.486, 8: 0.457, 9: 0.430, 10: 0.409,
 }
+ETIQUETAS_POKER = {
+    "Todos distintos": "TD (Todos Diferentes)",
+    "Un par": "1P (1 Par)",
+    "Dos pares": "2P (2 Pares)",
+    "Tercia": "T (Tercia)",
+    "Full": "TP (Tercia y Par / Full)",
+    "Póker": "P (Póker)",
+    "Quintilla": "Q (Quintilla)",
+}
 
 
 def prueba_promedios(valores: list[float], alpha: float = 0.05) -> dict:
@@ -78,7 +87,7 @@ def agrupar_frecuencias(
             fo_acum = fe_acum = 0.0
     if fe_acum:
         if not grupos:
-            raise ValueError("No hay suficientes observaciones para una prueba chi-cuadrado.")
+            raise ValueError("No hay suficientes observaciones para una prueba de χ².")
         grupos[-1]["categoria"] += f"-{nombres[-1]}"
         grupos[-1]["FO"] += fo_acum
         grupos[-1]["FE"] += fe_acum
@@ -180,6 +189,7 @@ def prueba_poker(valores: list[float], decimales: int = 3) -> dict:
             (3, 1, 1): 3, (3, 2): 4, (4, 1): 5, (5,): 6,
         }
     observadas = [0] * len(categorias)
+    clasificaciones = []
     for valor in valores:
         digitos = (
             f"{min(int(valor * 10**decimales), 10**decimales - 1):0{decimales}d}"
@@ -188,8 +198,11 @@ def prueba_poker(valores: list[float], decimales: int = 3) -> dict:
         patron = tuple(sorted(
             (digitos.count(digito) for digito in set(digitos)), reverse=True,
         ))
-        observadas[patrones[patron]] += 1
+        indice_categoria = patrones[patron]
+        observadas[indice_categoria] += 1
+        clasificaciones.append(ETIQUETAS_POKER[categorias[indice_categoria]])
     esperadas = [len(valores) * probabilidad for probabilidad in probabilidades]
+    omitidas = []
     if decimales == 5:
         pares_indice = categorias.index("Un par")
         resto_fo = sum(
@@ -204,16 +217,27 @@ def prueba_poker(valores: list[float], decimales: int = 3) -> dict:
             if indice != pares_indice and fo == 0
         ]
         grupos = [
-            {"categoria": "Un par", "FO": observadas[pares_indice],
+            {"categoria": ETIQUETAS_POKER["Un par"], "FO": observadas[pares_indice],
              "FE": esperadas[pares_indice]},
             {"categoria": "Resto de patrones", "FO": resto_fo, "FE": resto_fe},
         ]
     else:
         grupos = agrupar_categorias(observadas, esperadas, categorias)
+        for grupo in grupos:
+            grupo["categoria"] = "-".join(
+                ETIQUETAS_POKER.get(nombre, nombre)
+                for nombre in grupo["categoria"].split("-")
+            )
+    etiquetas_categorias = [ETIQUETAS_POKER[nombre] for nombre in categorias]
+    etiquetas_omitidas = [
+        ETIQUETAS_POKER[nombre]
+        for nombre in omitidas if decimales == 5
+    ]
     return {
         "n": len(valores), "decimales": decimales,
-        "categorias": categorias, "probabilidades": probabilidades,
-        "observadas": observadas, "categorias_omitidas": omitidas if decimales == 5 else [],
+        "categorias": categorias, "etiquetas_categorias": etiquetas_categorias,
+        "clasificaciones": clasificaciones, "probabilidades": probabilidades,
+        "observadas": observadas, "categorias_omitidas": etiquetas_omitidas,
         "esperadas": esperadas,
         **resultado_chi_cuadrado(grupos),
     }
@@ -234,10 +258,10 @@ def prueba_distancias_decimales(
     huecos: list[int] = []
     for digitos in digitos_por_numero:
         primera_posicion: dict[str, int] = {}
-        hueco = 3
+        hueco = 4
         for posicion, digito in enumerate(digitos):
             if digito in primera_posicion:
-                hueco = min(posicion - primera_posicion[digito] - 1, 3)
+                hueco = min(posicion - primera_posicion[digito] - 1, 4)
                 break
             primera_posicion[digito] = posicion
         huecos.append(hueco)
@@ -264,7 +288,7 @@ def prueba_distancias_decimales(
 def prueba_distancias(
     digitos: list[int], minimo_esperado: float = 5
 ) -> dict:
-    """Contrasta con chi-cuadrado los huecos entre dígitos repetidos."""
+    """Contrasta con χ² los huecos entre dígitos repetidos."""
     if len(digitos) < 2 or any(digito not in range(10) for digito in digitos):
         raise ValueError("Se requieren al menos dos dígitos en [0, 9].")
     ultima_posicion: dict[int, int] = {}

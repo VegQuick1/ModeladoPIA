@@ -32,6 +32,12 @@ jobs:
       - name: Run tests
         run: python -m unittest discover -s tests -v
 
+      - name: Verify multimedia assets
+        run: |
+          test -s assets/audio/menu_noir.wav
+          test -s assets/audio/investigacion_noir.wav
+          test -d assets/tablas
+
       - name: Build macOS application
         run: |
           pyinstaller --clean --noconfirm ExpedienteMontecarlo.spec

@@ -154,7 +154,7 @@ CASOS_OFICIALES_PDF = {
     9: {"valores_R": _R_DISTRIBUCIONES.copy(), "lambda": 3},
     10: {"valores_R": _R_DISTRIBUCIONES.copy(), "a": 2, "b": 4},
     11: {"valores_R": _R_DISTRIBUCIONES.copy()},
-    12: {"valores_R": _R_DISTRIBUCIONES.copy(), "lambda": 5},
+    12: {"tasa_diaria": 1, "dias_operacion": 5},
     13: {
         "valores_R": [
             0.74022, 0.65741, 0.66083, 0.08355, 0.55121, 0.00911,
@@ -253,8 +253,78 @@ def crear_caso(
     else:
         _caso_volados(caso, rng, datos_oficiales)
     _configurar_tabla_interactiva(caso)
+    if numero in {5, 6, 7, 8}:
+        caso["tablero_clasificacion"] = _crear_tablero_clasificacion(caso)
     caso["duracion"] = calcular_tiempo_capitulo(caso)
     return caso
+
+
+def _crear_tablero_clasificacion(caso: dict) -> dict:
+    valores = caso["auditoria"]["valores_R"]
+    numero = caso["numero"]
+    if numero == 5:
+        categorias = [
+            f"[{indice / 4:.2f}, {(indice + 1) / 4:.2f})"
+            for indice in range(4)
+        ]
+        clasificaciones = [
+            categorias[min(int(valor * 4), 3)] for valor in valores
+        ]
+        fichas = [
+            {"id": f"R{indice}", "texto": f"{valor:.5f}",
+             "categoria_correcta": clasificaciones[indice - 1]}
+            for indice, valor in enumerate(valores, 1)
+        ]
+    elif numero == 6:
+        categorias = [
+            "0 distancia", "1 distancia", "2 distancias",
+            "3 distancias", "4+ distancias",
+        ]
+        clasificaciones = [
+            categorias[hueco] for hueco in caso["auditoria"]["huecos"]
+        ]
+        fichas = [
+            {"id": f"R{indice}", "texto": f"{valor:.5f}",
+             "categoria_correcta": clasificaciones[indice - 1]}
+            for indice, valor in enumerate(valores, 1)
+        ]
+    elif numero == 7:
+        categorias = ["Inf-Izq", "Sup-Izq", "Inf-Der", "Sup-Der"]
+        clasificaciones = []
+        for indice in range(len(valores) - 1):
+            fila = min(int(valores[indice] * 2), 1)
+            columna = min(int(valores[indice + 1] * 2), 1)
+            clasificaciones.append(
+                categorias[(fila * 2) + columna]
+            )
+        fichas = [
+            {
+                "id": f"R{indice + 1}-R{indice + 2}",
+                "texto": (
+                    f"({valores[indice]:.5f}, {valores[indice + 1]:.5f})"
+                ),
+                "categoria_correcta": clasificaciones[indice],
+            }
+            for indice in range(len(valores) - 1)
+        ]
+    else:
+        categorias = caso["auditoria"]["etiquetas_categorias"]
+        clasificaciones = caso["auditoria"]["clasificaciones"]
+        fichas = [
+            {
+                "id": f"R{indice}",
+                "texto": f"{valor:.5f}",
+                "categoria_correcta": clasificaciones[indice - 1],
+            }
+            for indice, valor in enumerate(valores, 1)
+        ]
+    return {
+        "titulo": "Tablero de clasificación por arrastre",
+        "categorias": categorias,
+        "fichas": fichas,
+        "columnas_zonas": 5 if numero == 6 else 4,
+        "columnas_fichas": 2 if numero == 7 else 4 if numero == 6 else 5,
+    }
 
 
 def calcular_tiempo_capitulo(caso: dict) -> int:
@@ -274,10 +344,7 @@ def calcular_tiempo_capitulo(caso: dict) -> int:
 
     celdas_editables = len(caso["campos"])
     bono_complejidad = 120 if caso["numero"] in {6, 8, 12, 13} else 0
-    segundos = (
-        180 + filas_a_calcular * 25 + celdas_editables * 12 + bono_complejidad
-    )
-    return min(1080, max(240, segundos))
+    return 240 + filas_a_calcular * 25 + celdas_editables * 15 + bono_complejidad
 
 
 def _caso_generador(
@@ -288,23 +355,23 @@ def _caso_generador(
         c = oficial.get("c", 0)
         cantidad = oficial["iteraciones"]
     elif numero == 1:
-        m = rng.choice((8, 10, 12, 16, 20, 32))
-        for _ in range(1000):
+        for _ in range(2000):
+            m = rng.randint(8, 16)
             a, c, x0 = rng.randrange(m), rng.randrange(1, m), rng.randrange(m)
             try:
                 filas = generadores.congruencial_mixto_hasta_paro(
                     x0, a, c, m, min(16, m),
                 )
-                if len(filas) >= 4:
+                if 6 <= len(filas) <= 16:
                     break
             except RuntimeError:
                 continue
         else:
-            raise RuntimeError("No se pudo generar un caso mixto con paro manejable.")
+            raise RuntimeError("No se pudo generar un ciclo mixto de 6 a 16 iteraciones.")
         cantidad = len(filas)
     else:
-        m = rng.choice((16, 32, 64))
-        a = rng.choice((5, 11)) if m >= 16 else 5
+        m = rng.choice((32, 64))
+        a = rng.choice((5, 11))
         x0 = rng.randrange(1, m, 2)
         c = 0
         filas = generadores.congruencial_multiplicativo_hasta_paro(
@@ -412,14 +479,18 @@ def _caso_generador(
         ],
     ]
     caso["formula"] = (
-        f"Xₙ₊₁ = ({a}Xₙ + {c}) mod {m}"
-        if numero == 1 else f"Xₙ₊₁ = {a}Xₙ mod {m}\nPE = m / 4 = {periodo_esperado}"
+        (
+            f"Xₙ₊₁ = ({a}Xₙ + {c}) mod {m}\n"
+            f"Rᵢ = Xᵢ/m\nPE = {periodo_esperado}"
+        )
+        if numero == 1 else
+        f"Xₙ₊₁ = {a}Xₙ mod {m}\nRᵢ = Xᵢ/m\nPE = m/4 = {periodo_esperado}"
     )
     caso["formato"] = "Completa las filas hasta que se cumpla la condición de paro."
 
 
 def _caso_promedios(caso: dict, rng: random.Random, oficial: dict | None = None) -> None:
-    valores = oficial["valores_R"].copy() if oficial else _muestra_uniforme_balanceada(rng, 20)
+    valores = oficial["valores_R"].copy() if oficial else _muestra_uniforme_balanceada(rng, rng.randint(15, 30))
     resultado = estadisticas.prueba_promedios(valores)
     caso["narrativa"] = (
         f"Analiza N={len(valores)} números rectangulares. Calcula la media y "
@@ -430,6 +501,11 @@ def _caso_promedios(caso: dict, rng: random.Random, oficial: dict | None = None)
         for i, valor in enumerate(valores)
     ]
     caso["formato"] = "Ingresa la media, Z₀ y el veredicto de H₀."
+    caso["formula"] = (
+        "R̄ = ΣRᵢ/N\n"
+        "Z₀ = |(R̄−0.5)√N / √(1/12)|\n"
+        "Aceptar H₀ si Z₀ ≤ Zα/2"
+    )
     caso["campos"] = [
         _campo("media", "Media", "decimal"),
         _campo("z0", "Z₀", "decimal"),
@@ -449,7 +525,7 @@ def _caso_promedios(caso: dict, rng: random.Random, oficial: dict | None = None)
 
 
 def _caso_ks(caso: dict, rng: random.Random, oficial: dict | None = None) -> None:
-    valores = oficial["valores_R"].copy() if oficial else _muestra_uniforme_balanceada(rng, 10)
+    valores = oficial["valores_R"].copy() if oficial else _muestra_uniforme_balanceada(rng, rng.randint(15, 30))
     resultado = estadisticas.prueba_ks(valores)
     if oficial and "D_critico" in oficial:
         resultado["critico"] = oficial["D_critico"]
@@ -465,6 +541,10 @@ def _caso_ks(caso: dict, rng: random.Random, oficial: dict | None = None) -> Non
     )
     caso["tabla"] = tabla
     caso["formato"] = "Ingresa Dₙ y el veredicto de H₀ (Dₙ ≤ D crítico)."
+    caso["formula"] = (
+        "Dₙ = maxᵢ |i/N − Rᵢ ordenado|\n"
+        "Aceptar H₀ si Dₙ ≤ Dα,N"
+    )
     caso["campos"] = [
         _campo("dn", "Dₙ", "decimal"),
         _campo("critico_tabla", "d₀.₀₅,N de tabla", "decimal"),
@@ -485,7 +565,7 @@ def _caso_ks(caso: dict, rng: random.Random, oficial: dict | None = None) -> Non
 def _caso_frecuencias(caso: dict, rng: random.Random, oficial: dict | None = None) -> None:
     valores = (
         oficial["valores_R"].copy() if oficial
-        else _muestra_uniforme_balanceada(rng, 200)
+        else _muestra_uniforme_balanceada(rng, rng.randint(15, 30))
     )
     categorias = oficial.get("categorias", 4) if oficial else 4
     resultado = estadisticas.prueba_frecuencias(
@@ -503,6 +583,11 @@ def _caso_frecuencias(caso: dict, rng: random.Random, oficial: dict | None = Non
     )
     caso["tabla"] = tabla
     caso["formato"] = "Ingresa χ₀² y el veredicto de H₀."
+    caso["formula"] = (
+        "FEᵢ = N/k\n"
+        "χ₀² = Σ (FOᵢ−FEᵢ)²/FEᵢ\n"
+        "gl = k−1"
+    )
     caso["campos"] = [
         _campo("chi0", "χ₀²", "decimal"),
         _campo("critico_tabla", "χ² crítico de tabla", "decimal"),
@@ -521,34 +606,28 @@ def _caso_frecuencias(caso: dict, rng: random.Random, oficial: dict | None = Non
 
 
 def _caso_distancias(caso: dict, rng: random.Random, oficial: dict | None = None) -> None:
-    valores_r = oficial["valores_R"].copy() if oficial else None
-    if valores_r is not None:
-        resultado = estadisticas.prueba_distancias_decimales(valores_r)
-        digitos = resultado["digitos_por_numero"]
-        tabla = [["Hueco i", "FO", "FE", "Agrupación"]] + [
-            [str(indice) if indice < 3 else "≥3", resultado["observadas"][indice],
-             round(resultado["esperadas"][indice], 3),
-             "0-2" if indice < 3 else "≥3"]
-            for indice in range(4)
-        ] + [
-            [grupo["categoria"], grupo["FO"], round(grupo["FE"], 3), ""]
-            for grupo in resultado["grupos"]
-        ]
-    else:
-        digitos = [rng.randrange(10) for _ in range(500)]
-        resultado = estadisticas.prueba_distancias(digitos)
-        tabla = [["Hueco i", "FO", "FE", "FO−FE"]] + [
-            [g["categoria"], g["FO"], round(g["FE"], 3), "?"]
-            for g in resultado["grupos"]
-        ]
+    valores_r = (
+        oficial["valores_R"].copy() if oficial
+        else _muestra_uniforme_balanceada(rng, rng.randint(15, 30))
+    )
+    resultado = estadisticas.prueba_distancias_decimales(valores_r)
+    digitos = resultado["digitos_por_numero"]
+    tabla = [["Hueco i", "FO", "FE", "Agrupación"]] + [
+        [str(indice) if indice < 3 else "≥3", resultado["observadas"][indice],
+         round(resultado["esperadas"][indice], 3),
+         "0-2" if indice < 3 else "≥3"]
+        for indice in range(4)
+    ] + [
+        [grupo["categoria"], grupo["FO"], round(grupo["FE"], 3), ""]
+        for grupo in resultado["grupos"]
+    ]
     caso["narrativa"] = (
         f"Para cada uno de los {len(valores_r)} números, busca la primera repetición "
-        "dentro de sus cinco decimales. Clasifica i=0, 1, 2 y la cola i≥3; "
-        "agrupa las categorías indicadas para calcular χ₀²."
-        if valores_r is not None else
-        f"Secuencia de {len(digitos)} primeros dígitos decimales. Mide los huecos "
-        f"entre repeticiones; hay {resultado['n_huecos']} huecos. FEᵢ=N_huecos·0.1·0.9ⁱ "
-        "y la cola usa 0.9ᵏ. Las categorías adyacentes se agrupan hasta FE≥5."
+        "dentro de sus cinco decimales. Clasifica las distancias 0, 1, 2, 3 y 4+; "
+        "para χ², agrupa 3 y 4+ en la cola antes de calcular χ₀²."
+        f"Clasifica {len(valores_r)} números R por la primera repetición de sus cinco "
+        f"decimales. Se obtienen {resultado['n_huecos']} huecos. FEᵢ=N·0.1·0.9ⁱ "
+        "y la cola usa 0.9ᵏ; agrupa categorías adyacentes hasta FE≥5."
     )
     caso["tabla"] = tabla
     caso["formato"] = "Calcula el χ₀² de las categorías agrupadas y decide sobre H₀."
@@ -579,18 +658,22 @@ def _caso_distancias(caso: dict, rng: random.Random, oficial: dict | None = None
         "veredicto": "Acepta H₀" if resultado["acepta"] else "Rechaza H₀",
     }
     caso["auditoria"] = {
-        "digitos" if valores_r is None else "digitos_por_numero": digitos,
+        "digitos_por_numero": digitos,
         "alpha": oficial.get("alpha", 0.05) if oficial else 0.05,
         **resultado,
     }
-    if valores_r is not None:
-        caso["auditoria"]["valores_R"] = valores_r
+    caso["auditoria"]["valores_R"] = valores_r
+    caso["formula"] = (
+        "P(i) = 0.1·0.9ⁱ; P(i≥k)=0.9ᵏ\n"
+        "FEᵢ = N·P(i)\n"
+        "χ₀² = Σ (FOᵢ−FEᵢ)²/FEᵢ"
+    )
 
 
 def _caso_series(caso: dict, rng: random.Random, oficial: dict | None = None) -> None:
     valores = (
         oficial["valores_R"].copy() if oficial
-        else _muestra_uniforme_balanceada(rng, 200)
+        else _muestra_uniforme_balanceada(rng, rng.randint(15, 30))
     )
     divisiones = oficial.get("divisiones", 2) if oficial else 2
     resultado = estadisticas.prueba_series(
@@ -608,6 +691,11 @@ def _caso_series(caso: dict, rng: random.Random, oficial: dict | None = None) ->
     )
     caso["tabla"] = tabla
     caso["formato"] = "Calcula χ₀² y selecciona el veredicto de independencia H₀."
+    caso["formula"] = (
+        "FEᵢⱼ = (N−1)/4\n"
+        "χ₀² = Σ (FOᵢⱼ−FEᵢⱼ)²/FEᵢⱼ\n"
+        "gl = 3"
+    )
     caso["campos"] = [
         _campo("FE_pareja", "Frecuencia esperada por celda", "decimal"),
         _campo("chi0", "χ₀²", "decimal"),
@@ -630,18 +718,19 @@ def _caso_series(caso: dict, rng: random.Random, oficial: dict | None = None) ->
 def _caso_poker(caso: dict, rng: random.Random, oficial: dict | None = None) -> None:
     valores = (
         oficial["valores_R"].copy() if oficial
-        else _muestra_uniforme_balanceada(rng, 200)
+        else _muestra_uniforme_balanceada(rng, rng.randint(15, 30))
     )
-    decimales = oficial.get("decimales", 3) if oficial else 3
+    decimales = oficial.get("decimales", 5) if oficial else 5
     resultado = estadisticas.prueba_poker(valores, decimales=decimales)
     if decimales == 5:
         indice_par = resultado["categorias"].index("Un par")
-        tabla = [["Patrón (5 dígitos)", "FO", "Probabilidad", "FE", "Agrupación"]] + [
+        tabla = [["Mano (nombre completo)", "FO", "Probabilidad", "FE", "Agrupación"]] + [
             [
-                categoria, resultado["observadas"][indice],
+                resultado["etiquetas_categorias"][indice], resultado["observadas"][indice],
                 f'{resultado["probabilidades"][indice]:.5f}',
                 f'{resultado["esperadas"][indice]:.4f}',
-                "Un par" if indice == indice_par else "Resto",
+                resultado["etiquetas_categorias"][indice_par]
+                if indice == indice_par else "Resto de patrones",
             ]
             for indice, categoria in enumerate(resultado["categorias"])
         ] + [
@@ -649,7 +738,7 @@ def _caso_poker(caso: dict, rng: random.Random, oficial: dict | None = None) -> 
             for grupo in resultado["grupos"]
         ]
     else:
-        tabla = [["Patrón (3 dígitos)", "FO", "Probabilidad", "FE", "Contribución"]] + [
+        tabla = [["Mano (nombre completo)", "FO", "Probabilidad", "FE", "Contribución"]] + [
             [grupo["categoria"], grupo["FO"], f'{grupo["FE"] / len(valores):.5f}',
              f'{grupo["FE"]:.4f}', "?"]
             for grupo in resultado["grupos"]
@@ -657,7 +746,7 @@ def _caso_poker(caso: dict, rng: random.Random, oficial: dict | None = None) -> 
     probabilidades_texto = ", ".join(
         f"{nombre}={probabilidad:.5f}"
         for nombre, probabilidad in zip(
-            resultado["categorias"], resultado["probabilidades"],
+            resultado["etiquetas_categorias"], resultado["probabilidades"],
         )
     )
     caso["narrativa"] = (
@@ -667,14 +756,19 @@ def _caso_poker(caso: dict, rng: random.Random, oficial: dict | None = None) -> 
     )
     caso["tabla"] = tabla
     caso["formato"] = "Calcula χ₀² agrupado y selecciona si la secuencia pasa Póker."
+    caso["formula"] = (
+        "FEᵢ = N·pᵢ\n"
+        "χ₀² = Σ (FOᵢ−FEᵢ)²/FEᵢ\n"
+        "gl = categorías agrupadas−1"
+    )
     caso["campos"] = [
         *[
             _campo(f"FO{indice}", f"FO {categoria}", "entero")
-            for indice, categoria in enumerate(resultado["categorias"])
+            for indice, categoria in enumerate(resultado["etiquetas_categorias"])
         ],
         *[
             _campo(f"FEp{indice}", f"FE {categoria}", "decimal")
-            for indice, categoria in enumerate(resultado["categorias"])
+            for indice, categoria in enumerate(resultado["etiquetas_categorias"])
         ],
         _campo("chi0", "χ₀² agrupado", "decimal"),
         _campo("critico_tabla", "χ² crítico de tabla", "decimal"),
@@ -698,20 +792,22 @@ def _caso_poker(caso: dict, rng: random.Random, oficial: dict | None = None) -> 
         "alpha": oficial.get("alpha", 0.05) if oficial else 0.05,
         **resultado,
     }
+    caso["auditoria"]["categorias_canonicas"] = resultado["categorias"]
+    caso["auditoria"]["categorias"] = resultado["etiquetas_categorias"]
 
 
 def _caso_exponencial(caso: dict, rng: random.Random, oficial: dict | None = None) -> None:
     valores = (
         oficial["valores_R"].copy() if oficial
-        else [0.1 + 0.89 * rng.random() for _ in range(5)]
+        else [0.1 + 0.89 * rng.random() for _ in range(rng.randint(5, 8))]
     )
     lam = oficial["lambda"] if oficial else round(rng.uniform(0.35, 1.2), 2)
     resultado = variables.exponencial(valores, lam)
     caso["narrativa"] = (
         f"En el cajero automático, λ={lam} clientes/min. Aplica T_A=−ln(R)/λ "
-        "a los cuatro números R. Calcula T_A1…T_A4, T_TC y T_PA."
+        f"a {len(valores)} números R y calcula T_TC y T_PA."
         if oficial else
-        f"Con λ={lam}, aplica X=−ln(R)/λ a los cinco números R. "
+        f"Con λ={lam}, aplica X=−ln(R)/λ a {len(valores)} números R. "
         "Calcula cada T_Ai, T_TC=ΣT_Ai y T_PA=T_TC/N."
     )
     caso["tabla"] = [["i", "Rᵢ", "T_Ai"]] + [
@@ -719,6 +815,11 @@ def _caso_exponencial(caso: dict, rng: random.Random, oficial: dict | None = Non
         for i, r in enumerate(valores)
     ]
     caso["formato"] = f"Completa los {len(valores)} tiempos y los dos estadísticos."
+    caso["formula"] = (
+        "Tᵢ = −ln(Rᵢ)/λ\n"
+        "T_TC = ΣTᵢ\n"
+        "T_PA = T_TC/N"
+    )
     caso["campos"] = [
         _campo(f"T{i}", f"T_A{i}", "decimal") for i in range(1, len(valores) + 1)
     ] + [
@@ -734,23 +835,29 @@ def _caso_exponencial(caso: dict, rng: random.Random, oficial: dict | None = Non
 
 
 def _caso_uniforme(caso: dict, rng: random.Random, oficial: dict | None = None) -> None:
-    valores = oficial["valores_R"].copy() if oficial else [rng.random() for _ in range(4)]
+    valores = (
+        oficial["valores_R"].copy() if oficial
+        else [rng.random() for _ in range(rng.randint(5, 8))]
+    )
     minimo = oficial["a"] if oficial else rng.randint(2, 8)
     maximo = oficial["b"] if oficial else minimo + rng.randint(5, 12)
     resultados = variables.uniforme(valores, minimo, maximo)
     caso["narrativa"] = (
         f"Los tiempos de envasado de refrescos siguen U({minimo},{maximo}) minutos. "
-        "Calcula T_E1…T_E4 con X=a+(b−a)R."
+        f"Calcula {len(valores)} tiempos con X=a+(b−a)R."
         if oficial else
-        f"Transforma cuatro R con X=a+(b−a)R, a={minimo}, b={maximo}."
+        f"Transforma {len(valores)} R con X=a+(b−a)R, a={minimo}, b={maximo}."
     )
     caso["tabla"] = [["i", "Rᵢ", "Xᵢ"]] + [
         [i + 1, f"{r:.5f}" if oficial else f"{r:.4f}", "?"]
         for i, r in enumerate(valores)
     ]
-    caso["formato"] = "Calcula X₁, X₂, X₃ y X₄."
-    caso["campos"] = [_campo(f"X{i}", f"X{i}", "decimal") for i in range(1, 5)]
+    caso["formato"] = f"Calcula X₁, …, X{len(valores)}."
+    caso["campos"] = [
+        _campo(f"X{i}", f"X{i}", "decimal") for i in range(1, len(valores) + 1)
+    ]
     caso["esperado"] = {f"X{i}": value for i, value in enumerate(resultados, 1)}
+    caso["formula"] = "Xᵢ = a + (b−a)Rᵢ"
     caso["auditoria"] = {
         "valores_R": valores, "a": minimo, "b": maximo,
         "formula": "a+(b-a)R", "resultados": resultados,
@@ -760,63 +867,77 @@ def _caso_uniforme(caso: dict, rng: random.Random, oficial: dict | None = None) 
 def _caso_empirica(caso: dict, rng: random.Random, oficial: dict | None = None) -> None:
     valores = (
         oficial["valores_R"].copy() if oficial else
-        [rng.uniform(0.1, 0.49), rng.uniform(0.51, 0.95),
-         rng.uniform(0.1, 0.49), rng.uniform(0.51, 0.95)]
+        [
+            rng.uniform(0.1, 0.49) if indice % 2 == 0
+            else rng.uniform(0.51, 0.95)
+            for indice in range(rng.randint(5, 8))
+        ]
     )
     resultados = variables.empirica(valores)
     caso["narrativa"] = (
-        "Calcula los tiempos de transmisión de cuatro mensajes. Aplica X=√(2R) "
-        "si R≤0.5 y X=2R si R>0.5."
+        f"Calcula los tiempos de transmisión de {len(valores)} mensajes. "
+        "Aplica X=√(2R) si R≤0.5 y X=2R si R>0.5."
     )
     caso["tabla"] = [["i", "Rᵢ", "Tramo", "Xᵢ"]] + [
         [i + 1, f"{r:.5f}" if oficial else f"{r:.4f}",
          "√(2R)" if r <= 0.5 else "2R", "?"]
         for i, r in enumerate(valores)
     ]
-    caso["formato"] = "Calcula X₁, X₂, X₃ y X₄."
-    caso["campos"] = [_campo(f"X{i}", f"X{i}", "decimal") for i in range(1, 5)]
+    caso["formato"] = f"Calcula X₁, …, X{len(valores)}."
+    caso["campos"] = [
+        _campo(f"X{i}", f"X{i}", "decimal") for i in range(1, len(valores) + 1)
+    ]
     caso["esperado"] = {f"X{i}": value for i, value in enumerate(resultados, 1)}
+    caso["esperado"].update({
+        f"regla{i}": "√(2R)" if valor <= 0.5 else "2R"
+        for i, valor in enumerate(valores, 1)
+    })
+    caso["formula"] = (
+        "Xᵢ = √(2Rᵢ), si Rᵢ ≤ 0.5\n"
+        "Xᵢ = 2Rᵢ, si Rᵢ > 0.5"
+    )
     caso["auditoria"] = {
-        "valores_R": valores, "formula": "√(2R), R≤0.5; 2R, R>0.5",
+        "valores_R": valores,
+        "formula": "Xᵢ=√(2Rᵢ), si Rᵢ≤0.5\nXᵢ=2Rᵢ, si Rᵢ>0.5",
         "resultados": resultados,
     }
 
 
 def _caso_poisson(caso: dict, rng: random.Random, oficial: dict | None = None) -> None:
-    lam = oficial["lambda"] if oficial else round(rng.uniform(2.2, 4.5), 2)
-    valores = (
-        oficial["valores_R"].copy() if oficial
-        else [rng.uniform(0.1, 0.98) for _ in range(4)]
-    )
-    resultado = variables.poisson_inversa(valores, lam)
-    filas_poisson = (
-        resultado["tabla"] if oficial
-        else resultado["tabla"][:min(10, len(resultado["tabla"]))]
-    )
+    if oficial:
+        tasa_diaria = oficial["tasa_diaria"]
+        dias_operacion = oficial["dias_operacion"]
+    else:
+        dias_operacion = rng.randint(2, 6)
+        lam = round(rng.uniform(2, 6), 2)
+        tasa_diaria = lam / dias_operacion
+    lam = round(tasa_diaria * dias_operacion, 2)
+    filas_poisson = variables.tabla_poisson(lam)
     tabla = [["x", "f(x)", "F(x)"]] + [
         [fila["x"], f'{fila["f"]:.5f}', f'{fila["F"]:.5f}']
         for fila in filas_poisson
     ]
     caso["narrativa"] = (
-        f"La demanda semanal trabaja 5 de 7 días, con λ={lam}. Acumula Poisson "
-        f"desde x=0 hasta F(x)≥0.9999 y asigna X mediante F(x−1)<R≤F(x). "
-        f"R={valores}."
+        "La demanda de un producto tiene un comportamiento Poisson con promedio "
+        "de 1 unidad por día; si se trabaja 5 de los 7 días de la semana "
+        "(λ = 5), calcula la distribución acumulada para conocer la demanda "
+        "semanal desde x=0 hasta F(x)≥0.9999."
         if oficial else
-        f"Con λ={lam}, acumula Poisson hasta F(x)≥0.9999. "
-        "Asigna cada R mediante F(x−1)<R≤F(x)."
+        f"La demanda tiene un promedio diario de {tasa_diaria:g} unidades y "
+        f"se opera durante {dias_operacion} días; por ello λ={lam}. Calcula la "
+        "distribución acumulada desde x=0 hasta F(x)≥0.9999."
     )
     caso["tabla"] = tabla
-    caso["formato"] = f"Ingresa los {len(valores)} enteros asignados a cada Rᵢ."
-    caso["campos"] = [
-        _campo(f"X{i}", f"X{i} entero", "entero")
-        for i in range(1, len(valores) + 1)
-    ]
-    caso["esperado"] = {
-        f"X{i}": value for i, value in enumerate(resultado["valores"], 1)
-    }
+    caso["formato"] = (
+        "Completa x desde 0 y calcula f(x) y F(x) hasta alcanzar F(x)≥0.9999."
+    )
+    caso["formula"] = "f(x) = (e⁻λ · λˣ) / x!"
+    caso["campos"] = []
+    caso["esperado"] = {}
     caso["auditoria"] = {
-        "lambda": lam, "valores_R": valores, "tabla_completa": resultado["tabla"],
-        "mapeo": resultado["valores"], "criterio_paro": 0.9999,
+        "lambda": lam, "tasa_diaria": tasa_diaria,
+        "dias_operacion": dias_operacion, "tabla_completa": filas_poisson,
+        "criterio_paro": 0.9999,
     }
 
 
@@ -925,6 +1046,14 @@ def _caso_inventario(
         "costo_faltante": costo_faltante,
         "costo_total": costo_total,
     }
+    caso["formula"] = (
+        "Inv. final = max(0, Inv. inicial−Demanda)\n"
+        "Faltante = max(0, Demanda−Inv. inicial)\n"
+        "Cordenar = Nordenes·Corden\n"
+        "Cinventario = ΣInv. promedio·Cmantenimiento/12\n"
+        "Cfaltante = ΣFaltante·Cunitario\n"
+        "Ctotal = Cordenar + Cinventario + Cfaltante"
+    )
 
 
 def _caso_volados(caso: dict, rng: random.Random, oficial: dict | None = None) -> None:
@@ -935,7 +1064,7 @@ def _caso_volados(caso: dict, rng: random.Random, oficial: dict | None = None) -
     if oficial:
         corridas_r = [corrida.copy() for corrida in oficial["corridas_R"]]
     else:
-        for _ in range(10):
+        for _ in range(5):
             valores: list[float] = []
             corrida = sistemas.simular_volados([], capital, apuesta_inicial, meta)
             while not (corrida["exito"] or corrida["quiebra"]):
@@ -943,6 +1072,11 @@ def _caso_volados(caso: dict, rng: random.Random, oficial: dict | None = None) -
                 corrida = sistemas.simular_volados(valores, capital, apuesta_inicial, meta)
             corridas_r.append(valores)
     resultado = sistemas.simular_martingala(corridas_r, capital, apuesta_inicial, meta)
+    if not oficial:
+        corridas_r = [
+            [jugada["R"] for jugada in corrida["jugadas"]]
+            for corrida in resultado["corridas"]
+        ]
     tabla = [[
         "Corrida", "R disponibles" if oficial else "R utilizados",
         "Saldo final", "Estado",
@@ -998,6 +1132,16 @@ def _caso_volados(caso: dict, rng: random.Random, oficial: dict | None = None) -
         "coordenadas_decodificadas": caso["coordenadas"],
         "tiradas_utilizadas": len(resultado["corridas"][0]["jugadas"]),
     }
+    caso["auditoria"]["valores_R"] = [
+        valor for corrida in corridas_r for valor in corrida
+    ]
+    caso["formula"] = (
+        "Ganar si Rᵢ<0.5; perder si Rᵢ≥0.5\n"
+        "Apuestaᵢ = min(apuesta vigente, saldoᵢ₋₁)\n"
+        "Saldoᵢ = saldoᵢ₋₁ + apuestaᵢ (gana) o − apuestaᵢ (pierde)\n"
+        "Apuesta siguiente = 2·apuestaᵢ después de perder\n"
+        "P(éxito) = corridas exitosas / corridas finalizadas"
+    )
 
 
 def validar_respuesta(
@@ -1013,7 +1157,7 @@ def validar_respuesta(
             continue
         texto = entrada.get(clave, "").strip()
         esperado = caso["esperado"][clave]
-        if campo["tipo"] == "selector":
+        if campo["tipo"] in {"selector", "option_menu"}:
             if texto != esperado:
                 errores.append(clave)
             else:
@@ -1156,7 +1300,7 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
         if existente is not None:
             return existente
         campo = _campo(identificador, etiqueta, tipo, opciones)
-        if tipo != "selector":
+        if tipo not in {"selector", "option_menu"}:
             campo["placeholder_text"] = _placeholder_ejemplo(numero, identificador)
         campos.append(campo)
         return campo
@@ -1171,9 +1315,22 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
         crear_campo(identificador, etiqueta, tipo, valor, opciones)
         return {"campo": identificador}
 
+    def filas_muestra(valores: list[float]) -> list[list[dict]]:
+        filas = []
+        for inicio in range(0, len(valores), 5):
+            celdas = [
+                celda_dada(f"R{indice + 1} = {valores[indice]:.5f}")
+                for indice in range(inicio, min(inicio + 5, len(valores)))
+            ]
+            celdas.extend(
+                celda_dada("") for _ in range(5 - len(celdas))
+            )
+            filas.append(celdas)
+        return filas
+
     def agregar_pie(identificador: str) -> None:
         original = campos_originales[identificador]
-        if original["tipo"] != "selector":
+        if original["tipo"] not in {"selector", "option_menu"}:
             original["placeholder_text"] = _placeholder_ejemplo(numero, identificador)
         campos.append(original)
         caso["esperado"][identificador] = esperado_original[identificador]
@@ -1242,18 +1399,18 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
         pie.append("periodo")
     elif numero == 3:
         valores = caso["auditoria"]["valores_R"]
-        filas = []
-        for inicio in range(0, len(valores), 5):
-            filas.append([
-                celda_dada(f"{valor:.5f}") for valor in valores[inicio:inicio + 5]
-            ])
         agregar_seccion(
             "muestra", "Muestra de números rectangulares",
-            ["R₁", "R₂", "R₃", "R₄", "R₅"], filas, scrollable=False,
+            ["Rᵢ"] * 5, filas_muestra(valores), scrollable=False,
         )
         for clave in ("media", "z0", "zcrit", "veredicto"):
             agregar_pie(clave)
     elif numero == 4:
+        agregar_seccion(
+            "muestra", "Muestra de números rectangulares",
+            ["Rᵢ"] * 5, filas_muestra(caso["auditoria"]["valores_R"]),
+            scrollable=False,
+        )
         filas = []
         for indice, registro in enumerate(caso["auditoria"]["filas"], 1):
             clave = f"D{indice}"
@@ -1311,10 +1468,16 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
                 hueco: [f"{valor:.5f}" for valor, distancia in zip(
                     caso["auditoria"]["valores_R"], resultado["huecos"]
                 ) if distancia == hueco]
-                for hueco in range(4)
+                for hueco in range(5)
             }
             valores_filas = [
-                [celda_dada(f"Distancia {hueco}"), celda_dada(", ".join(valores))]
+                [
+                    celda_dada(
+                        f"{hueco} distancia" if hueco < 2 else
+                        f"{hueco} distancias" if hueco < 4 else "4+ distancias"
+                    ),
+                    celda_dada(", ".join(valores)),
+                ]
                 for hueco, valores in grupos_valores.items()
             ]
             titulo_muestra = "Números agrupados por primera repetición"
@@ -1350,12 +1513,9 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
     elif numero == 8:
         auditoria = caso["auditoria"]
         filas = []
-        for indice, categoria in enumerate(auditoria["categorias"]):
+        for indice, categoria in enumerate(auditoria["etiquetas_categorias"]):
             filas.append([
-                celda_dada({
-                    "Todos distintos": "TD", "Un par": "1P", "Dos pares": "2P",
-                    "Tercia": "T", "Full": "F", "Póker": "P", "Quintilla": "Q",
-                }.get(categoria, categoria)),
+                celda_dada(categoria),
                 celda_editable(
                     f"FO{indice}", f"FO {categoria}", auditoria["observadas"][indice],
                     "entero",
@@ -1371,11 +1531,26 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
             "poker_agrupacion", "Agrupación para χ² (gl = 1)",
             ["Grupo", "FO", "FE"],
             [
-                [celda_dada(grupo["categoria"]), celda_dada(grupo["FO"]),
-                 celda_dada(f'{grupo["FE"]:.4f}')]
-                for grupo in auditoria["grupos"]
+                [
+                    celda_dada(grupo["categoria"]),
+                    celda_editable(
+                        f"poker_grupo_FO{indice}", f'FO {grupo["categoria"]}',
+                        grupo["FO"], "entero",
+                    ),
+                    celda_editable(
+                        f"poker_grupo_FE{indice}", f'FE {grupo["categoria"]}',
+                        grupo["FE"],
+                    ),
+                ]
+                for indice, grupo in enumerate(auditoria["grupos"])
             ],
         )
+        for indice in range(len(auditoria["grupos"])):
+            campos_por_id = {
+                campo["id"]: campo for campo in campos
+            }
+            campos_por_id[f"poker_grupo_FO{indice}"]["placeholder_text"] = "ej. 6"
+            campos_por_id[f"poker_grupo_FE{indice}"]["placeholder_text"] = "ej. 5.04"
         for clave in ("chi0", "critico_tabla", "veredicto"):
             agregar_pie(clave)
     elif numero in (9, 10, 11):
@@ -1386,7 +1561,10 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
             resumen = ("total", "promedio")
         else:
             id_col, etiqueta_col = "X", "Xᵢ"
-            resultados = [caso["esperado"][f"X{i}"] for i in range(1, 5)]
+            resultados = [
+                caso["esperado"][f"X{i}"]
+                for i in range(1, len(valores) + 1)
+            ]
             resumen = ()
         filas = []
         for indice, valor in enumerate(valores, 1):
@@ -1394,7 +1572,11 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
                 celda_dada(indice), celda_dada(f"{valor:.5f}"),
             ]
             if numero == 11:
-                celdas.append(celda_dada("√(2R)" if valor <= 0.5 else "2R"))
+                celdas.append(celda_editable(
+                    f"regla{indice}", f"Regla aplicada R{indice}",
+                    caso["esperado"][f"regla{indice}"], "option_menu",
+                    ["", "√(2R)", "2R"],
+                ))
             celdas.append(celda_editable(
                 f"{id_col}{indice}", f"{etiqueta_col}{indice}",
                 resultados[indice - 1],
@@ -1409,13 +1591,6 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
     elif numero == 12:
         auditoria = caso["auditoria"]
         poisson = list(auditoria["tabla_completa"])
-        fila_final = poisson[-1]
-        x_siguiente = fila_final["x"] + 1
-        f_siguiente = fila_final["f"] * auditoria["lambda"] / x_siguiente
-        poisson.append({
-            "x": x_siguiente, "f": f_siguiente,
-            "F": fila_final["F"] + f_siguiente,
-        })
         filas_poisson = []
         for indice, fila in enumerate(poisson):
             filas_poisson.append([
@@ -1430,24 +1605,8 @@ def _configurar_tabla_interactiva(caso: dict) -> None:
             mensaje_faltan=(
                 "La tabla de Poisson aún no alcanza F(x)≥0.9999; agrega más filas"
             ),
-            maximo=(
-                len(filas_poisson) if caso["modo_ejecucion"] == "OFICIAL_PDF"
-                else min(len(filas_poisson), 16)
-            ),
+            maximo=len(filas_poisson),
         )
-        valores = auditoria["valores_R"]
-        filas_mapeo = [
-            [
-                celda_dada(indice + 1), celda_dada(f"{valor:.5f}"),
-                celda_editable(
-                    f"X{indice + 1}", f"X{indice + 1}", auditoria["mapeo"][indice],
-                    "entero",
-                ),
-            ]
-            for indice, valor in enumerate(valores)
-        ]
-        agregar_seccion("mapeo", "Transformada inversa discreta",
-                        ["i", "Rᵢ", "Xᵢ"], filas_mapeo)
     elif numero == 13:
         filas = []
         encabezados = [

@@ -7,6 +7,8 @@ project_dir = Path(SPECPATH)
 
 hidden_imports = [
     "PIL._tkinter_finder",
+    "pygame",
+    "pygame.mixer",
 ]
 
 customtkinter_spec = importlib.util.find_spec("customtkinter")
@@ -16,8 +18,9 @@ if customtkinter_spec and customtkinter_spec.submodule_search_locations:
     added_files.append((str(customtkinter_dir / "assets"), "customtkinter/assets"))
 
 assets_dir = project_dir / "assets"
-if assets_dir.is_dir():
-    added_files.append((str(assets_dir), "assets"))
+if not assets_dir.is_dir():
+    raise FileNotFoundError(f"Falta la carpeta de recursos requerida: {assets_dir}")
+added_files.append((str(assets_dir), "assets"))
 
 analysis = Analysis(
     [str(project_dir / "main.py")],

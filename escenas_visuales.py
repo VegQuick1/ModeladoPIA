@@ -12,15 +12,15 @@ _ESCENAS = {
     "ingreso", "transicion", "final_bueno", "final_malo",
     *(f"capitulo_{numero:02d}" for numero in range(1, 15)),
 }
-_FONDO = "#181512"
-_SUPERFICIE = "#211D19"
-_PAPEL = "#2B2620"
-_NOTA = "#332C22"
-_LATON = "#8C6D3F"
-_AMBAR = "#E0A952"
+_FONDO = "#12100E"
+_SUPERFICIE = "#181512"
+_PAPEL = "#241F1A"
+_NOTA = "#241F1A"
+_LATON = "#A67C46"
+_AMBAR = "#F5B942"
 _VERDE = "#4E9A67"
 _ROJO = "#B83B3B"
-_TINTA = "#E8DDCA"
+_TINTA = "#F5EFE6"
 
 
 class _Pintor:
@@ -189,7 +189,7 @@ def _escena_final(p: _Pintor, bueno: bool) -> None:
         p.text(555, 187, "COORDENADAS TRIANGULADAS", _AMBAR, 11)
     else:
         p.rect(162, 144, 268, 155, "#4B4135", _LATON, 2)
-        p.rect(174, 76, 254, 145, "#332C22", _LATON, 2)
+        p.rect(174, 76, 254, 145, _NOTA, _LATON, 2)
         p.rect(176, 60, 252, 86, "#493A2B", _LATON, 2)
         p.rect(170, 154, 178, 204, "#4B4135")
         p.rect(250, 154, 258, 204, "#4B4135")

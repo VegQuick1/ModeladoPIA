@@ -43,21 +43,33 @@ class TemporizadorTests(unittest.TestCase):
         for numero in range(1, 15):
             with self.subTest(capitulo=numero):
                 caso = casos_narrativa.crear_caso(numero, numero)
+                filas = 0
+                for seccion in caso["tabla_interactiva"]["secciones"]:
+                    if seccion["filas_a_calcular"] is not None:
+                        filas += seccion["filas_a_calcular"]
+                        continue
+                    editables = [
+                        fila for fila in seccion["filas"]
+                        if any("campo" in celda for celda in fila)
+                    ]
+                    filas += (
+                        min(seccion["filas_paro"], len(editables))
+                        if seccion["dinamica"] else len(editables)
+                    )
+                bono = 120 if numero in {6, 8, 12, 13} else 0
+                esperado = 240 + filas * 25 + len(caso["campos"]) * 15 + bono
+                self.assertEqual(caso["duracion"], esperado)
                 self.assertEqual(
                     caso["duracion"], casos_narrativa.calcular_tiempo_capitulo(caso),
                 )
-                self.assertGreaterEqual(caso["duracion"], 240)
-                self.assertLessEqual(caso["duracion"], 1080)
 
         corto = casos_narrativa.crear_caso(10, 10)
         extenso = casos_narrativa.crear_caso(2, 10, "OFICIAL_PDF")
         poisson = casos_narrativa.crear_caso(12, 10, "OFICIAL_PDF")
         inventario = casos_narrativa.crear_caso(13, 10, "OFICIAL_PDF")
-        self.assertEqual(corto["duracion"], 328)
         self.assertGreater(extenso["duracion"], corto["duracion"])
-        self.assertEqual(extenso["duracion"], 1080)
         self.assertGreater(poisson["duracion"], corto["duracion"])
-        self.assertEqual(inventario["duracion"], 792)
+        self.assertGreater(inventario["duracion"], corto["duracion"])
 
     def test_colores_y_penalizacion_en_los_limites(self):
         self.assertEqual(estado_reloj(351, 1000), "verde")
@@ -627,6 +639,13 @@ class PruebasEstadisticasTests(unittest.TestCase):
         self.assertTrue(all(grupo["FE"] >= 5 for grupo in resultado["grupos"]))
         self.assertEqual(resultado["gl"], len(resultado["grupos"]) - 1)
 
+    def test_distancias_rectangulares_separan_tres_y_cuatro_mas(self):
+        resultado = estadisticas.prueba_distancias_decimales([
+            0.01123, 0.01231, 0.12341, 0.12345,
+        ])
+        self.assertEqual(resultado["huecos"], [0, 2, 3, 4])
+        self.assertEqual(resultado["observadas"], [1, 0, 1, 2])
+
     def test_series_y_poker(self):
         valores = [((i * 37) % 1000) / 1000 for i in range(200)]
         series = estadisticas.prueba_series(valores, 2)
@@ -782,9 +801,10 @@ class CasosTests(unittest.TestCase):
                     for seccion in caso["tabla_interactiva"]["secciones"]:
                         if seccion["dinamica"] and numero in (1, 2, 12):
                             self.assertGreaterEqual(seccion["filas_paro"], 4)
-                            self.assertLessEqual(seccion["filas_paro"], 16)
+                            limite_filas = 18 if numero == 12 else 16
+                            self.assertLessEqual(seccion["filas_paro"], limite_filas)
                             if modo == "DINAMICO":
-                                self.assertLessEqual(seccion["max_filas"], 16)
+                                self.assertLessEqual(seccion["max_filas"], limite_filas)
 
     def test_tablas_interactivas_y_condiciones_de_paro(self):
         for numero, filas_paro in ((1, 6), (2, 16)):
@@ -919,11 +939,25 @@ class CasosTests(unittest.TestCase):
         ])
         self.assertEqual(casos[10]["auditoria"]["valores_R"], casos[9]["auditoria"]["valores_R"])
         self.assertEqual(casos[11]["auditoria"]["valores_R"], casos[9]["auditoria"]["valores_R"])
-        self.assertEqual(casos[12]["auditoria"]["valores_R"], casos[9]["auditoria"]["valores_R"])
         self.assertEqual(casos[9]["tabla"][1][1], "0.76971")
         self.assertEqual(casos[10]["tabla"][1][1], "0.76971")
         self.assertEqual(casos[11]["tabla"][1][1], "0.76971")
-        self.assertIn("0.76971", casos[12]["narrativa"])
+        poisson = casos[12]
+        self.assertEqual(poisson["auditoria"]["lambda"], 5)
+        self.assertIn("5 de los 7 días de la semana", poisson["narrativa"])
+        self.assertNotIn("valores_R", poisson["auditoria"])
+        self.assertTrue(poisson["campos"])
+        self.assertTrue(all(
+            campo["id"].startswith("pois_") for campo in poisson["campos"]
+        ))
+        self.assertEqual(
+            [seccion["titulo"] for seccion in poisson["tabla_interactiva"]["secciones"]],
+            ["Tabla de probabilidad acumulada"],
+        )
+        self.assertEqual(poisson["formula"], "f(x) = (e⁻λ · λˣ) / x!")
+        self.assertEqual(poisson["tabla"][1][0], 0)
+        self.assertEqual(len(poisson["tabla"]), 17)
+        self.assertGreaterEqual(poisson["auditoria"]["tabla_completa"][-1]["F"], 0.9999)
         self.assertAlmostEqual(cajero["total"], 1.037484217, places=8)
         self.assertAlmostEqual(cajero["promedio"], 0.259371054, places=8)
         self.assertAlmostEqual(casos[9]["esperado"]["T1"], 0.0872471528, places=8)
@@ -933,11 +967,13 @@ class CasosTests(unittest.TestCase):
         )
         self.assertAlmostEqual(casos[11]["esperado"]["X4"], 0.4705953676)
         self.assertEqual(
-            [casos[12]["esperado"][f"X{i}"] for i in range(1, 5)],
-            [7, 7, 6, 2],
+            {clave.split("_")[1] for clave in poisson["esperado"]},
+            {parte for indice in range(16) for parte in (f"f{indice}", f"F{indice}")},
         )
-        self.assertEqual(casos[12]["auditoria"]["tabla_completa"][-1]["x"], 15)
-        self.assertAlmostEqual(casos[12]["auditoria"]["tabla_completa"][-1]["F"], 0.999931, places=6)
+        self.assertEqual(poisson["auditoria"]["tabla_completa"][-1]["x"], 15)
+        self.assertAlmostEqual(
+            poisson["auditoria"]["tabla_completa"][-1]["F"], 0.999931, places=6,
+        )
         inventario = casos[13]
         self.assertEqual(inventario["esperado"]["costo_ordenar"], 300)
         self.assertEqual(inventario["esperado"]["costo_inventario"], 1915)
@@ -996,6 +1032,7 @@ class CasosTests(unittest.TestCase):
             self.assertTrue(all(
                 not campo.get("placeholder_text", "").lower().startswith("ej.")
                 for campo in entradas
+                if not campo["id"].startswith("poker_grupo_")
             ))
         caso = casos_narrativa.crear_caso(1, 77, "OFICIAL_PDF")
         fila = caso["tabla_interactiva"]["secciones"][0]["filas"][0]
@@ -1044,7 +1081,7 @@ class CasosTests(unittest.TestCase):
     def test_poker_muestra_agrupacion_de_tercia_con_fe_baja(self):
         caso = casos_narrativa.crear_caso(8, semilla=28)
         auditoria = caso["auditoria"]
-        self.assertLess(auditoria["esperadas"][0], 5)
+        self.assertLess(auditoria["esperadas"][-1], 5)
         self.assertTrue(all(grupo["FE"] >= 5 for grupo in auditoria["grupos"]))
         self.assertEqual(auditoria["gl"], len(auditoria["grupos"]) - 1)
 
@@ -1128,9 +1165,339 @@ class CasosTests(unittest.TestCase):
         self.assertEqual(len(manos), 7)
         self.assertEqual(
             [celda["valor"] for fila in manos for celda in fila[:1]],
-            ["TD", "1P", "2P", "T", "F", "P", "Q"],
+            [
+                "TD (Todos Diferentes)", "1P (1 Par)", "2P (2 Pares)",
+                "T (Tercia)", "TP (Tercia y Par / Full)",
+                "P (Póker)", "Q (Quintilla)",
+            ],
+        )
+        agrupacion = next(
+            seccion for seccion in casos[8]["tabla_interactiva"]["secciones"]
+            if seccion["id"] == "poker_agrupacion"
+        )
+        self.assertTrue(all(
+            "campo" in fila[1] and "campo" in fila[2]
+            for fila in agrupacion["filas"]
+        ))
+        self.assertEqual(
+            [
+                campo["placeholder_text"] for campo in casos[8]["campos"]
+                if campo["id"].startswith("poker_grupo_")
+            ],
+            ["ej. 6", "ej. 5.04", "ej. 6", "ej. 5.04"],
         )
         self.assertAlmostEqual(casos[8]["esperado"]["chi0"], 0.3528604, places=6)
+
+    def test_longitudes_dinamicas_fichas_de_datos_y_formulas(self):
+        for semilla in (14, 77):
+            casos = {
+                numero: casos_narrativa.crear_caso(numero, semilla)
+                for numero in range(1, 15)
+            }
+            self.assertTrue(all(caso["formula"] for caso in casos.values()))
+            self.assertTrue(all(
+                6 <= casos[numero]["auditoria"]["iteraciones_hasta_paro"] <= 16
+                for numero in (1, 2)
+            ))
+            for numero in range(3, 9):
+                valores = casos[numero]["auditoria"]["valores_R"]
+                self.assertGreaterEqual(len(valores), 15)
+                self.assertLessEqual(len(valores), 30)
+                secciones = casos[numero]["tabla_interactiva"]["secciones"]
+                self.assertFalse(any(
+                    seccion["id"] == "ficha_numeros_rectangulares"
+                    for seccion in secciones
+                ))
+            for numero in range(9, 12):
+                self.assertIn(
+                    len(casos[numero]["auditoria"]["valores_R"]), range(5, 9),
+                )
+
+            poisson = casos[12]
+            self.assertGreaterEqual(poisson["auditoria"]["lambda"], 2)
+            self.assertLessEqual(poisson["auditoria"]["lambda"], 6)
+            self.assertIn(len(poisson["auditoria"]["tabla_completa"]), range(10, 19))
+            self.assertNotIn("valores_R", poisson["auditoria"])
+            self.assertEqual(
+                [seccion["id"] for seccion in poisson["tabla_interactiva"]["secciones"]],
+                ["poisson"],
+            )
+            self.assertEqual(poisson["formula"], "f(x) = (e⁻λ · λˣ) / x!")
+            self.assertEqual(len(casos[13]["auditoria"]["filas"]), 12)
+            self.assertEqual(len(casos[14]["auditoria"]["corridas"]), 5)
+
+            for numero in (5, 6, 7, 8):
+                tablero = casos[numero]["tablero_clasificacion"]
+                self.assertTrue(tablero["categorias"])
+                self.assertTrue(tablero["fichas"])
+                self.assertEqual(
+                    tablero["columnas_zonas"], 5 if numero == 6 else 4,
+                )
+                self.assertEqual(
+                    tablero["columnas_fichas"],
+                    2 if numero == 7 else 4 if numero == 6 else 5,
+                )
+                self.assertTrue(all(
+                    ficha["categoria_correcta"] in tablero["categorias"]
+                    for ficha in tablero["fichas"]
+                ))
+            self.assertEqual(
+                casos[6]["tablero_clasificacion"]["categorias"],
+                [
+                    "0 distancia", "1 distancia", "2 distancias",
+                    "3 distancias", "4+ distancias",
+                ],
+            )
+            poker = casos[8]
+            self.assertTrue(all(
+                etiqueta in str(poker["auditoria"])
+                for etiqueta in (
+                    "TD (Todos Diferentes)", "1P (1 Par)", "2P (2 Pares)",
+                    "T (Tercia)", "TP (Tercia y Par / Full)",
+                    "P (Póker)", "Q (Quintilla)",
+                )
+            ))
+
+        for modo in ("DINAMICO", "OFICIAL_PDF"):
+            for numero in range(3, 15):
+                caso = casos_narrativa.crear_caso(numero, 77, modo)
+                secciones = caso["tabla_interactiva"]["secciones"]
+                muestras = [
+                    seccion for seccion in secciones
+                    if seccion["titulo"] == "Muestra de números rectangulares"
+                ]
+                self.assertEqual(len(muestras), 1 if numero in (3, 4) else 0)
+                if numero in (3, 4):
+                    self.assertIs(secciones[0], muestras[0])
+                    valores_muestra = [
+                        celda["valor"] for fila in muestras[0]["filas"]
+                        for celda in fila if celda["valor"]
+                    ]
+                    self.assertEqual(
+                        valores_muestra,
+                        [
+                            f"R{indice} = {valor:.5f}"
+                            for indice, valor in enumerate(
+                                caso["auditoria"]["valores_R"], 1,
+                            )
+                        ],
+                    )
+
+    def test_tablero_usa_solo_valores_y_categorias_explicitas(self):
+        for numero in (5, 6, 8):
+            caso = casos_narrativa.crear_caso(numero, 77)
+            self.assertTrue(all(
+                ficha["texto"].replace(".", "", 1).isdigit()
+                for ficha in caso["tablero_clasificacion"]["fichas"]
+            ))
+        series = casos_narrativa.crear_caso(7, 77)
+        self.assertTrue(all(
+            ficha["texto"].startswith("(") and "R" not in ficha["texto"]
+            for ficha in series["tablero_clasificacion"]["fichas"]
+        ))
+        self.assertEqual(
+            casos_narrativa.crear_caso(6, 77)["tablero_clasificacion"]["categorias"],
+            [
+                "0 distancia", "1 distancia", "2 distancias",
+                "3 distancias", "4+ distancias",
+            ],
+        )
+        tablero = object.__new__(modulo_main.TableroClasificacion)
+        tablero.fichas_config = {
+            "R1": {"categoria_correcta": "A"},
+            "R2": {"categoria_correcta": "B"},
+        }
+        tablero.asignaciones = {"R1": "B"}
+        self.assertEqual(
+            tablero.validar(), {"pendientes": ["R2"], "incorrectas": ["R1"]},
+        )
+        tablero.asignaciones["R1"] = "A"
+        tablero.asignaciones["R2"] = "B"
+        self.assertEqual(tablero.validar(), {"pendientes": [], "incorrectas": []})
+
+    def test_tablero_mueve_fichas_a_zonas_y_permite_devolverlas(self):
+        class WidgetFalso:
+            def __init__(self, *_argumentos, **_opciones):
+                self.destruido = False
+                self.oculto = False
+                self.restaurado = False
+
+            def pack(self, **_opciones):
+                pass
+
+            def configure(self, **_opciones):
+                pass
+
+            def bind(self, *_argumentos, **_opciones):
+                pass
+
+            def grid_remove(self):
+                self.oculto = True
+
+            def grid(self, **_opciones):
+                self.restaurado = True
+
+            def destroy(self):
+                self.destruido = True
+
+        tablero = object.__new__(modulo_main.TableroClasificacion)
+        original = WidgetFalso()
+        tablero.fichas_config = {
+            "R1": {"texto": "0.12345", "categoria_correcta": "A"},
+        }
+        tablero.botones_ficha = {"R1": original}
+        tablero.asignaciones = {}
+        tablero.seleccionada = None
+        tablero.zonas = {
+            categoria: {
+                "contenedor": WidgetFalso(),
+                "cabecera": WidgetFalso(),
+                "columnas_fichas": 1,
+            }
+            for categoria in ("A", "B")
+        }
+        tablero.fichas_por_categoria = {"A": {}, "B": {}}
+        tablero._reorganizar_fichas = lambda _categoria: None
+        tablero._actualizar_zonas = lambda: None
+        tablero._actualizar_estilo_fichas = lambda: None
+        with (
+            patch.object(modulo_main.ctk, "CTkButton", WidgetFalso),
+            patch.object(modulo_main.ctk, "CTkFont", return_value=None),
+        ):
+            tablero._asignar("R1", "B")
+            boton_zona = tablero.fichas_por_categoria["B"]["R1"]
+            self.assertTrue(original.oculto)
+            self.assertEqual(tablero.validar()["incorrectas"], ["R1"])
+            tablero._fantasma = WidgetFalso()
+            tablero._categoria_en = lambda _x, _y: "A"
+            evento = type("EventoFalso", (), {"x_root": 0, "y_root": 0})()
+            tablero._soltar_ficha(evento, "R1")
+            self.assertTrue(boton_zona.destruido)
+            boton_reubicado = tablero.fichas_por_categoria["A"]["R1"]
+            tablero._fantasma = None
+            tablero._soltar_ficha(evento, "R1")
+            self.assertTrue(original.restaurado)
+            self.assertTrue(boton_reubicado.destruido)
+            self.assertEqual(tablero.validar()["pendientes"], ["R1"])
+            tablero._asignar("R1", "A")
+        self.assertEqual(tablero.validar(), {"pendientes": [], "incorrectas": []})
+
+    def test_tableros_comparten_un_scroll_central_sin_scrolls_en_zonas(self):
+        fuente_tablero = inspect.getsource(modulo_main.TableroClasificacion.__init__)
+        fuente_tabla = inspect.getsource(modulo_main.ExpedienteMontecarlo._renderizar_caso)
+        self.assertNotIn("CTkScrollableFrame", fuente_tablero)
+        self.assertIn("height=92", fuente_tablero)
+        self.assertIn("self.area_trabajo = ctk.CTkScrollableFrame", fuente_tabla)
+        self.assertIn("self.entradas, scrollable=False", fuente_tabla)
+
+    def test_volados_numera_corridas_tras_meta_o_quiebra(self):
+        caso_volados = casos_narrativa.crear_caso(14, 77)
+        self.assertNotIn("TD (Todos Diferentes)", caso_volados["narrativa"])
+
+        class EntradaFalsa:
+            def __init__(self, valor):
+                self.valor = valor
+
+            def get(self):
+                return self.valor
+
+        class EtiquetaFalsa:
+            def __init__(self):
+                self.texto = ""
+
+            def configure(self, **opciones):
+                self.texto = opciones["text"]
+
+        tabla = object.__new__(modulo_main.TablaInteractiva)
+        tabla.configuracion = {
+            "secciones": [{
+                "id": "volados",
+                "filas": [[{"valor": 1}] for _ in range(5)],
+            }],
+        }
+        estados = ["Continúa", "Meta", "Continúa", "Quiebra", "Continúa"]
+        tabla.entradas = {
+            f"estado{indice}": EntradaFalsa(estado)
+            for indice, estado in enumerate(estados, 1)
+        }
+        tabla.etiquetas_corrida = {
+            indice: EtiquetaFalsa() for indice in range(1, 6)
+        }
+
+        modulo_main.TablaInteractiva.recalcular_corridas_volados(tabla)
+
+        self.assertEqual(
+            [fila[0]["valor"] for fila in tabla.configuracion["secciones"][0]["filas"]],
+            [1, 1, 2, 2, 3],
+        )
+        self.assertEqual(
+            [etiqueta.texto for etiqueta in tabla.etiquetas_corrida.values()],
+            ["1", "1", "2", "2", "3"],
+        )
+        fuente_render = inspect.getsource(modulo_main.TablaInteractiva._renderizar)
+        self.assertIn("command=(", fuente_render)
+        self.assertIn("self.recalcular_corridas_volados", fuente_render)
+        self.assertIn("self.recalcular_corridas_volados()", fuente_render)
+
+    def test_opciones_regla_empirica_son_editables_y_se_validan(self):
+        caso = casos_narrativa.crear_caso(11, 77)
+        self.assertEqual(
+            caso["formula"],
+            "Xᵢ = √(2Rᵢ), si Rᵢ ≤ 0.5\nXᵢ = 2Rᵢ, si Rᵢ > 0.5",
+        )
+        reglas = [
+            campo for campo in caso["campos"]
+            if campo["id"].startswith("regla")
+        ]
+        self.assertEqual(len(reglas), len(caso["auditoria"]["valores_R"]))
+        self.assertTrue(all(campo["tipo"] == "option_menu" for campo in reglas))
+        self.assertTrue(all(
+            campo["opciones"] == ["", "√(2R)", "2R"] for campo in reglas
+        ))
+        for campo in reglas:
+            valor_correcto = caso["esperado"][campo["id"]]
+            self.assertTrue(casos_narrativa.validar_respuesta(
+                caso, {campo["id"]: valor_correcto},
+            )["correcto"])
+            self.assertFalse(casos_narrativa.validar_respuesta(
+                caso, {campo["id"]: "tramo equivocado"},
+            )["correcto"])
+
+    def test_revision_autocompleta_el_tablero(self):
+        class OptionMenuFalso:
+            def __init__(self):
+                self.valor = ""
+
+            def set(self, valor):
+                self.valor = valor
+
+        class TablaFalsa:
+            filas_visibles = {}
+
+            def _renderizar(self):
+                pass
+
+        class TableroFalso:
+            completado = False
+
+            def completar(self):
+                self.completado = True
+
+        class AplicacionFalsa:
+            pass
+
+        app = AplicacionFalsa()
+        app.caso = {
+            "tabla_interactiva": {"secciones": []},
+            "esperado": {"regla1": "√(2R)"},
+        }
+        app.tabla = TablaFalsa()
+        app.entradas = {"regla1": OptionMenuFalso()}
+        app.tablero_clasificacion = TableroFalso()
+        with patch.object(modulo_revision.ctk, "CTkOptionMenu", OptionMenuFalso):
+            modulo_revision._completar_respuestas(app)
+        self.assertEqual(app.entradas["regla1"].valor, "√(2R)")
+        self.assertTrue(app.tablero_clasificacion.completado)
 
     def test_porcentaje_y_probabilidad_admiten_fracciones_o_porcentajes(self):
         probabilidad = casos_narrativa.crear_caso(14, semilla=314)

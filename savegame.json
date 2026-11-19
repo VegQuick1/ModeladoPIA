@@ -3,23 +3,27 @@
   "alias": "Detective Vance",
   "modo": "OFICIAL_PDF",
   "modo_juego": "OFICIAL",
-  "capitulo": 10,
-  "capitulo_actual": 10,
+  "capitulo": 14,
+  "capitulo_actual": 14,
   "estrellas": [
-    4
-  ],
-  "fallidos": [
     1,
     2,
     3,
+    4,
     5,
     6,
     7,
     8,
-    9
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
   ],
-  "activo": true,
+  "fallidos": [],
+  "activo": false,
   "viaje_tiempo": false,
   "pendientes_rehacer": [],
-  "resultado_actual": "tiempo_agotado"
+  "resultado_actual": ""
 }

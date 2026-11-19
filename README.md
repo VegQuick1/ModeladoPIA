@@ -42,6 +42,10 @@ otro modo.
 - `variables_no_uniformes.py`: transformaciones de distribuciones.
 - `sistemas_aplicados.py`: cola, inventario y juego de Martingala.
 - `tests/`: pruebas de los motores, los capítulos y la persistencia.
+- `assets/audio/`: pistas noir WAV incluidas; se pueden reemplazar por
+  `menu_noir.mp3`/`.wav` e `investigacion_noir.mp3`/`.wav`.
+- `assets/tablas/`: imágenes opcionales `tabla_z.png`, `tabla_ks.png` y
+  `tabla_chi2.png`; mientras no se añadan, el visor muestra las tablas de respaldo.
 
 El progreso se guarda en `savegame.json`. Ejecuta la suite desde la raíz del
 proyecto con `pytest`.
